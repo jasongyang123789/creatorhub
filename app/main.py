@@ -1709,6 +1709,28 @@ async def login_cookie(body: CookieIn):
         return {"account_id": acc.id, "nickname": acc.nickname}
 
 
+@app.get("/api/health-score")
+async def health_score_all():
+    """全部账号健康分（0-100，红黄绿，每分可解释）。"""
+    from .health_score import compute_all
+    return {"accounts": compute_all()}
+
+
+@app.get("/api/health-score/{account_id}")
+async def health_score_one(account_id: int):
+    from .health_score import compute_health
+    return compute_health(account_id)
+
+
+@app.post("/api/one-liner/parse")
+async def one_liner_parse(body: dict = Body(...)):
+    """一句话任务解析：只输出提案，绝不直接创建任务。"""
+    from .one_liner import parse_one_liner, render_proposal
+    text = str((body or {}).get("text") or "")
+    proposal = parse_one_liner(text)
+    return {**proposal, "card": render_proposal(proposal)}
+
+
 @app.get("/api/morning-report")
 async def morning_report(days: int = 1):
     """AI 新媒体员工晨报(只读):账号健康/近N天作品/粉丝变化/今日建议。"""

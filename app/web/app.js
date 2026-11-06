@@ -8672,3 +8672,20 @@ window.CreatorHubBridge = {
     await Promise.allSettled((refreshers[CURRENT_TAB] || []).map(fn => Promise.resolve().then(() => fn())));
   },
 };
+
+// ── 专家模式：默认隐藏 代理池/浏览器内核 等高级配置，老板不需要看到 ──
+function toggleExpertMode(force) {
+  const on = typeof force === "boolean"
+    ? force
+    : !document.body.classList.contains("expert-mode");
+  document.body.classList.toggle("expert-mode", on);
+  document.querySelectorAll("[data-expert]").forEach(el => { el.hidden = !on; });
+  const btn = $("expert-toggle");
+  if (btn) btn.setAttribute("aria-pressed", on ? "true" : "false");
+  try { localStorage.setItem("creatorhub-expert-mode", on ? "1" : "0"); } catch (e) {}
+}
+try {
+  if (localStorage.getItem("creatorhub-expert-mode") === "1") {
+    document.addEventListener("DOMContentLoaded", () => toggleExpertMode(true));
+  }
+} catch (e) {}

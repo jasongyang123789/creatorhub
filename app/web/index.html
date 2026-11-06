@@ -1844,6 +1844,7 @@
   </div>
   <div class="header-actions">
     <button class="ghost command-trigger" id="command-trigger" type="button" aria-label="搜索功能" aria-haspopup="dialog" aria-controls="command-dialog" aria-keyshortcuts="Control+k Meta+k" title="搜索功能（Ctrl / ⌘ K）"><svg aria-hidden="true"><use href="#i-logo"/></svg><span>搜索功能</span><kbd>Ctrl K</kbd></button>
+    <button class="ghost" id="expert-toggle" type="button" aria-pressed="false" title="显示/隐藏 代理池、浏览器内核 等高级配置" onclick="toggleExpertMode()"><svg aria-hidden="true"><use href="#i-shield"/></svg><span>专家模式</span></button>
     <div class="theme-switch" role="group" aria-label="画面主题">
       <button type="button" data-theme-choice="light" aria-label="日间主题" aria-pressed="false" title="日间主题"><svg aria-hidden="true"><use href="#i-sun"/></svg></button>
       <button type="button" data-theme-choice="dark" aria-label="夜间主题" aria-pressed="false" title="夜间主题"><svg aria-hidden="true"><use href="#i-moon"/></svg></button>
@@ -1989,7 +1990,7 @@
     </div>
 
     <!-- 指纹 Chromium 多版本内核 -->
-    <div class="card" data-section="runtime">
+    <div class="card" data-section="runtime" data-expert hidden>
       <div class="card-head">
         <span class="card-ic"><svg><use href="#i-film"/></svg></span>
         <h2>浏览器内核 <span class="sub">多版本管理 · 账号固定绑定</span></h2>
@@ -2008,7 +2009,7 @@
     </div>
 
     <!-- 代理池(提前配置好,账号从池里关联) -->
-    <div class="card" data-section="proxies">
+    <div class="card" data-section="proxies" data-expert hidden>
       <div class="card-head">
         <span class="card-ic"><svg><use href="#i-shield"/></svg></span>
         <h2>代理池 <span class="sub">提前配置 · 账号关联使用</span></h2>
@@ -2888,7 +2889,7 @@
         <button type="submit" id="engine-settings-save" disabled><svg aria-hidden="true"><use href="#i-check"/></svg>保存采集设置</button>
       </div>
     </form>
-    <details class="collection-advanced transport-matrix" id="transport-matrix-panel" open>
+    <details class="collection-advanced transport-matrix" id="transport-matrix-panel">
       <summary>API 兼容矩阵与多账号隔离</summary>
       <div class="collection-advanced-body stack">
         <div class="row-between gap-wrap">

@@ -108,3 +108,19 @@ def test_panel_full_names_only_when_explicitly_enabled(local_project, tmp_path):
     html_text = html_path.read_text(encoding="utf-8")
     assert "子申" in html_text
     assert "完整昵称" in html_text
+
+
+def test_asset_panel_masks_and_shows_risk_events(local_project, tmp_path):
+    aid = store(DouyinAccount(platform="douyin", nickname="子申说", status="active"))
+    store(AccountWork(platform="douyin", account_id=aid, item_id="w1",
+                      desc="爆款", like_count=99))
+    store(__import__("app.models", fromlist=["RiskEvent"]).RiskEvent(
+        account_id=aid, outcome="risk", detail="测试风控事件"))
+    from app.asset_panel import build_asset_panel
+    html_path, json_path = build_asset_panel(tmp_path, mask_names=True)
+    html_text = html_path.read_text(encoding="utf-8")
+    payload = json_path.read_text(encoding="utf-8")
+    assert "子申说" not in html_text and "子申说" not in payload
+    assert "子***" in html_text
+    assert "爆款" in html_text and "风控" in html_text
+    assert "只读" in html_text
