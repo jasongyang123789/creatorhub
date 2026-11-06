@@ -749,6 +749,10 @@ class IdentityModeTests(unittest.TestCase):
                 self_outer.assertTrue(engine.inside)
                 return ContextStub()
 
+            async def close_context(self, _key):
+                # 租约关闭回调(main.open_account_browser 的 close_callback)
+                return None
+
         self_outer = self
         async def scenario():
             result = await main.open_account_browser(account_id)

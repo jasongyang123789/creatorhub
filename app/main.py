@@ -1709,6 +1709,13 @@ async def login_cookie(body: CookieIn):
         return {"account_id": acc.id, "nickname": acc.nickname}
 
 
+@app.get("/api/morning-report")
+async def morning_report(days: int = 1):
+    """AI 新媒体员工晨报(只读):账号健康/近N天作品/粉丝变化/今日建议。"""
+    from .morning_report import build_report
+    return build_report(days=days)
+
+
 @app.get("/api/overview/summary")
 async def overview_summary(platform: str = "douyin"):
     if platform not in {"douyin", "xhs", "kuaishou", "shipinhao", "tiktok"}:
@@ -3473,6 +3480,26 @@ async def list_account_works(account_id: int, limit: int = 200):
         return [_work_dict(w) for w in s.exec(q).all()]
 
 
+# Fetcher error strings that mean "the platform answered and this account
+# provably has no published works". Only these become a successful empty
+# sync. "empty" is deliberately NOT in this set: it means the fetcher parsed
+# no rows without knowing why (cookie scope, visibility, page changes), and
+# treating it as zero works would mask real accounts as empty — exactly the
+# misreport seen on the douyin account with many published works.
+_WORKS_CONFIRMED_EMPTY = {
+    "当前账号没有已发布的视频或图文作品": "该账号暂无已发布的视频或图文作品",
+    "TikTok 本账号主页已响应，但没有已发布作品": "该 TikTok 账号暂无已发布作品",
+}
+
+
+def _works_sync_confirmed_empty(err: str) -> bool:
+    return (err or "").strip() in _WORKS_CONFIRMED_EMPTY
+
+
+def _works_sync_empty_reason(err: str) -> str:
+    return _WORKS_CONFIRMED_EMPTY.get((err or "").strip(), "该账号暂无已发布作品")
+
+
 @app.post("/api/accounts/{account_id}/works/sync")
 async def sync_account_works(account_id: int):
     """打开账号自己的主页,拦截抓取本账号已发布作品,落库(upsert)。"""
@@ -3508,7 +3535,11 @@ async def sync_account_works(account_id: int):
                 cookie, direct_ua, uid,
                 timeout=cfg.engine.request_timeout_seconds, proxy=acc.proxy or "",
                 environment=direct_environment)
-            if api_items or effective_mode == "api" or api_err == "empty":
+            # "empty" here only means the API answered without parseable rows:
+            # cookie scope, visibility settings or page changes can all yield
+            # it. Hybrid mode must not trust it as authoritative — fall back
+            # to browser interception before declaring the account empty.
+            if api_items or effective_mode == "api":
                 source = "api"
                 return api_items, api_err
             print(f"[dy-account-works] API 空响应({api_err}),回退浏览器")
@@ -3528,6 +3559,15 @@ async def sync_account_works(account_id: int):
     if not items:
         if err and err.startswith("missing_uid"):
             raise HTTPException(400, err.split(":", 1)[-1])
+        if _works_sync_confirmed_empty(err):
+            # The platform answered and the account has no published works.
+            # That is a successful sync with zero rows, not a failure; keep
+            # existing local rows untouched (nothing to upsert).
+            return {"ok": True, "fetched": 0, "added": 0, "empty": True,
+                    "reason": _works_sync_empty_reason(err),
+                    "source": source,
+                    "configured_mode": (transport["configured_mode"]
+                                        if transport else "browser")}
         raise HTTPException(400, f"未抓到作品:{err or '可能登录态失效/无公开作品'}"
                                  "(详情见服务端控制台日志)")
     now = datetime.utcnow()

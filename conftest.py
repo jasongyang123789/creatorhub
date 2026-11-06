@@ -7,6 +7,28 @@ import tempfile
 from pathlib import Path
 
 import pytest
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
+
+
+@event.listens_for(Engine, "connect")
+def _fast_test_sqlite(dbapi_connection, _record):
+    """Tests create dozens of throwaway SQLite files; durability is irrelevant.
+
+    Without this every create_all() fsyncs per statement (42 tables), which on
+    Windows disks costs 12-80 s per fresh database and made the suite time out.
+    Applies to all engines, including tests that call create_engine() directly.
+    """
+    if type(dbapi_connection).__module__.split(".")[0] != "sqlite3":
+        return
+    cursor = dbapi_connection.cursor()
+    try:
+        # Only drop fsync. Changing journal_mode here would need an exclusive
+        # lock and fails ("database is locked") when a test holds a second
+        # connection open; app.db already selects WAL for its own engine.
+        cursor.execute("PRAGMA synchronous=OFF")
+    finally:
+        cursor.close()
 
 
 def pytest_configure(config):

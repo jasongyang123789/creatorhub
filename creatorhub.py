@@ -278,7 +278,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "command",
         nargs="?",
-        choices=("start", "install", "check"),
+        choices=("start", "install", "check", "morning-report"),
         default="start",
         help="操作；不填写时直接启动",
     )
@@ -313,6 +313,18 @@ def main() -> int:
             install(skip_browser=args.skip_browser, skip_node=args.skip_node)
         elif args.command == "check":
             check()
+        elif args.command == "morning-report":
+            import app.config as _cfgmod
+            from app.config import load_config
+            from app.db import init_db
+            from app.morning_report import build_and_render
+            cfg = load_config(ROOT / "config.yaml")
+            db_path = str((ROOT / cfg.db_path).resolve())
+            init_db(db_path)
+            _, rendered = build_and_render()
+            out = ROOT / f"晨报-{__import__('datetime').date.today().isoformat()}.md"
+            out.write_text(rendered, encoding="utf-8")
+            print(f"晨报已生成: {out}")
         else:
             start(
                 host=args.host,

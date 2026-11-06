@@ -5,6 +5,7 @@ import asyncio
 import contextvars
 import inspect
 import json
+import sys
 import threading
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from contextlib import ExitStack
@@ -250,6 +251,11 @@ async def creator_check(storage_state_json: str, proxy: str = "", *,
     except Exception as exc:
         return (None, exc) if preserve_error else None
 
+    # asyncio.to_thread 在 3.12 上重抛的异常不是同一对象(桥接层复制了异常),
+    # 而 preserve_error 的调用方可能依赖原始实例(类型细分类/信号都在实例上)。
+    # 在 worker 线程内就地捕获,把原始异常作为"值"带回来,绕开桥接复制。
+    worker_exc: list = []
+
     def _run():
         from .creator_api import XhsCreatorApi
         api = XhsCreatorApi(cookie_str, proxy=proxy)
@@ -259,6 +265,9 @@ async def creator_check(storage_state_json: str, proxy: str = "", *,
                 return result
             ok, msg = result
             return ok, msg, {"success": ok, "msg": msg}
+        except Exception as exc:
+            worker_exc.append(exc)
+            raise
         finally:
             api.close()
     try:
@@ -268,7 +277,8 @@ async def creator_check(storage_state_json: str, proxy: str = "", *,
         error = _creator_response_error(response)
         valid = False if isinstance(error, XhsApiError) and error.category == "auth" else None
         return (valid, error) if preserve_error else valid
-    except Exception as exc:
+    except Exception:
+        exc = worker_exc[0] if worker_exc else sys.exc_info()[1]
         valid = False if isinstance(exc, XhsApiError) and exc.category == "auth" else None
         return (valid, exc) if preserve_error else valid
 

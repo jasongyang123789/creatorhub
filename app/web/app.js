@@ -3259,6 +3259,7 @@ async function syncMyWorks() {
     try {
       const r = await api("/api/accounts/" + HUB_ACC + "/works/sync", { method: "POST" });
       if (r.skipped) { toast(`同步暂缓:${r.reason || "操作间隔尚未结束"}`, "info", 5000); return; }
+      if (r.empty) { toast(`同步完成:${r.reason || "该账号暂无已发布作品"}${transportSourceSuffix(r.source)}`, "info", 5000); return; }
       toast(`同步完成:抓到 ${Number(r.fetched) || 0} 条,新增 ${Number(r.added) || 0}${transportSourceSuffix(r.source)}`, "ok");
     }
     catch (e) { toast("同步失败:" + e.message, "err"); }

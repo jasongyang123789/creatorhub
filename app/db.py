@@ -149,12 +149,36 @@ def _auto_migrate(engine):
                 existing_indexes.add(index.name)
 
 
+def _apply_sqlite_pragmas(dbapi_connection, _connection_record) -> None:
+    """Per-connection SQLite tuning.
+
+    The default (rollback journal, synchronous=FULL) fsyncs on every commit;
+    on ordinary Windows disks that made a fresh create_all of the 42 tables
+    take 12-80 s and every scan/publish write wait on the disk. WAL with
+    synchronous=NORMAL keeps the database consistent across crashes (at most
+    the last commit can be lost on power failure) and lets readers proceed
+    while the engine writes. busy_timeout turns brief lock contention between
+    the web workers and the background engine into a wait, not an error.
+    The desktop snapshot uses sqlite3.backup(), which is WAL-safe.
+    """
+    cursor = dbapi_connection.cursor()
+    try:
+        # busy_timeout first: switching an existing file to WAL needs a brief
+        # exclusive lock, and without the timeout a concurrent opener fails.
+        cursor.execute("PRAGMA busy_timeout=5000")
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+    finally:
+        cursor.close()
+
+
 def init_db(db_path: str):
     global _engine
     _engine = create_engine(
         f"sqlite:///{db_path}",
         connect_args={"check_same_thread": False},
     )
+    event.listen(_engine, "connect", _apply_sqlite_pragmas)
     inspector = inspect(_engine)
     legacy_schedules = inspector.has_table("publishtask") and (
         "scheduled_at_is_utc" not in {

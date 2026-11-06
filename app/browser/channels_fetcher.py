@@ -198,6 +198,20 @@ async def fetch_channels_works(mgr: BrowserManager, identity: Identity,
             try:
                 await page.goto(list_url, wait_until="domcontentloaded", timeout=30000)
                 await page.wait_for_timeout(settle_ms)
+                # 助手 SPA 会在路由失效(微信侧改版)时把旧地址静默弹回裸
+                # /platform 首页。此时 post_list 接口一次都不会触发,而无关
+                # 管理接口里的 totalCount=0 绝不能读成"没有作品"。先试一次
+                # 点菜单进入,最后由调用处按 final_url 归类失败原因。
+                if page.url.rstrip("/") == PLATFORM_URL:
+                    for label in ("内容管理", "作品管理", "视频管理"):
+                        try:
+                            await page.get_by_text(label, exact=False).first.click(
+                                timeout=3000)
+                            await page.wait_for_timeout(settle_ms)
+                            if page.url.rstrip("/") != PLATFORM_URL:
+                                break
+                        except Exception:
+                            continue
                 stagnant = 0
                 for _ in range(max_scrolls):
                     before = len(collected)
@@ -221,6 +235,13 @@ async def fetch_channels_works(mgr: BrowserManager, identity: Identity,
         if not collected:
             if any("/login" in u or "login.html" in u for u in final_urls):
                 error = "logged_out:登录态失效,请重新登录"
+            elif (all(u.rstrip("/") == PLATFORM_URL for u in final_urls)
+                  and not any("post/post_list" in x for x in api_seen)):
+                # 被弹回首页 + 作品列表接口从未触发:助手页面结构已变化,
+                # 绝不能与"没有作品"混为一谈。
+                error = ("视频号助手页面结构可能已改版:作品列表页被重定向回首页,"
+                         "post_list 接口未触发。请人工打开创作者平台确认新入口;"
+                         "本次结果不代表账号没有作品")
             elif (post_response_count and post_totals
                   and all(str(n) in ("0", "0.0") for n in post_totals)):
                 error = "当前账号没有已发布的视频或图文作品"

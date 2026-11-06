@@ -1,6 +1,10 @@
 """Render native widgets with inert callbacks: never start a service or log in."""
 from types import SimpleNamespace
-import tkinter as tk
+import pytest
+
+# 无 tkinter 的解释器（uv --without-pip 的 venv / 精简构建）应跳过本文件，
+# 而不是让整个测试集合因导入失败而中断。
+tk = pytest.importorskip("tkinter", reason="当前解释器未提供 tkinter，跳过桌面 UI 测试")
 import unittest
 
 from desktop.ui import LauncherView, COLORS

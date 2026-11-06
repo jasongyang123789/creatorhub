@@ -10,7 +10,7 @@ import logging
 import random
 import time
 from contextlib import asynccontextmanager, nullcontext
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -932,7 +932,7 @@ class MonitorEngine:
                 .where(KeywordCollectionJob.status == "pending")
                 .where(KeywordCollectionJob.cancel_requested == False)  # noqa:E712
                 .where(or_(KeywordCollectionJob.next_allowed_at == None,  # noqa:E711
-                           KeywordCollectionJob.next_allowed_at <= datetime.utcnow()))
+                           KeywordCollectionJob.next_allowed_at <= datetime.now(timezone.utc)))
                 .order_by(KeywordCollectionJob.created_at)
             ).all()
         for job in jobs:
