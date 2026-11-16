@@ -8,6 +8,53 @@ from sqlalchemy import Index
 from sqlmodel import Field, SQLModel
 
 
+class AgentRun(SQLModel, table=True):
+    """Bounded assistant run; no model credentials or raw provider history."""
+    id: str = Field(primary_key=True)
+    request_hash: str
+    conversation_id: str = Field(default="", index=True)
+    conversation_title: str = ""
+    parent_run_id: Optional[str] = Field(default=None, index=True)
+    context_key: str = ""
+    channel_id: str = ""
+    channel_name: str = ""
+    task_type: str = ""
+    task_id: Optional[int] = None
+    platform: str = ""
+    account_id: Optional[int] = None
+    mode: str = "chat"
+    prompt: str = ""
+    provider: str = ""
+    model_name: str = ""
+    status: str = Field(default="queued", index=True)
+    answer: str = ""
+    partial_answer: str = ""
+    error: str = ""
+    evidence_json: str = "[]"
+    steps_json: str = "[]"
+    input_tokens: int = 0
+    output_tokens: int = 0
+    usage_json: str = "[]"
+    reasoning_json: str = "[]"
+    duration_ms: int = 0
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    finished_at: Optional[datetime] = None
+
+
+class AgentWorkflow(SQLModel, table=True):
+    """Immutable plan approved by content hash; each step has a durable receipt."""
+    id: str = Field(primary_key=True)
+    run_id: str = Field(index=True)
+    title: str = ""
+    plan_json: str = "{}"
+    plan_hash: str = ""
+    status: str = Field(default="draft", index=True)
+    results_json: str = "[]"
+    error: str = ""
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
 class TaskSubmission(SQLModel, table=True):
     """A request receipt committed in the same transaction as its new task."""
     digest: str = Field(primary_key=True)
@@ -306,7 +353,7 @@ class CommentWatch(SQLModel, table=True):
 class PublishTask(SQLModel, table=True):
     """多平台发布任务(可定时、可来自跨平台作品转发)。"""
     id: Optional[int] = Field(default=None, primary_key=True)
-    platform: str = Field(default="xhs", index=True)   # xhs | douyin | kuaishou | shipinhao
+    platform: str = Field(default="xhs", index=True)   # xhs | douyin | kuaishou | shipinhao | tiktok
     account_id: Optional[int] = None                   # 用哪个已登录账号发布
     media_type: str = "images"                         # images | video
     title: str = ""                                    # 标题(各平台上限不同)
@@ -316,6 +363,9 @@ class PublishTask(SQLModel, table=True):
     media_json: str = ""                               # 本地文件路径列表(JSON)
     visibility: str = "public"                         # 抖音:public 公开 | friends 好友可见 | private 仅自己可见
     allow_save: bool = True                            # 抖音:是否允许他人保存(下载)
+    allow_comment: bool = True                         # TikTok:允许评论
+    allow_duet: bool = True                            # TikTok:允许 Duet
+    allow_stitch: bool = True                          # TikTok:允许 Stitch
     scheduled_at: Optional[datetime] = None            # UTC；空=尽快发
     scheduled_at_is_utc: bool = True  # 存量无时区预约需要人工确认，不自动猜时区
     status: str = "pending"        # draft | pending | publishing | uncertain | done | failed | canceled

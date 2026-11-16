@@ -4,6 +4,7 @@ import { createPortal, flushSync } from "react-dom";
 import { Sheet, ActionMenu, Tabs, Icon } from "./ui/primitives";
 import { installMotion, reveal, selectionMarker } from "./ui/motion";
 import { Onboarding } from "./onboarding";
+import { AgentAssistant } from "./agent";
 
 const $ = id => document.getElementById(id);
 const bridge = window.CreatorHubBridge;
@@ -236,8 +237,32 @@ function PublishPreview({ revision, contextVersion }) {
   const preview = useRef(null);
   useLayoutEffect(() => { reveal(preview.current?.firstElementChild); }, [index, media]);
   useEffect(() => {
-    const sync = () => setCopy({ title: $("pub-title").value, desc: $("pub-desc").value, topics: $("pub-topics").value,
-      account: $("pub-acc").selectedOptions[0]?.textContent, when: $("pub-when").value });
+    const ensureCounter = (forId, id) => {
+      const label = document.querySelector(`label[for="${forId}"]`);
+      if (!label) return null;
+      let badge = $(id);
+      if (!badge) {
+        badge = document.createElement("span");
+        badge.id = id;
+        badge.className = "field-scope wb-char-count";
+        badge.setAttribute("aria-hidden", "true");
+        label.append(badge);
+      }
+      return badge;
+    };
+    const titleBadge = ensureCounter("pub-title", "pub-title-count");
+    const descBadge = ensureCounter("pub-desc", "pub-desc-count");
+    const sync = () => {
+      const title = $("pub-title").value;
+      const desc = $("pub-desc").value;
+      if (titleBadge) {
+        titleBadge.textContent = `${title.length} / 20`;
+        titleBadge.dataset.nearLimit = title.length >= 18 ? "true" : "false";
+      }
+      if (descBadge) descBadge.textContent = `${desc.length} 字`;
+      setCopy({ title, desc, topics: $("pub-topics").value,
+        account: $("pub-acc").selectedOptions[0]?.textContent, when: $("pub-when").value });
+    };
     document.addEventListener("input", sync); document.addEventListener("change", sync); sync();
     return () => { document.removeEventListener("input", sync); document.removeEventListener("change", sync); };
   }, [contextVersion]);
@@ -248,7 +273,7 @@ function PublishPreview({ revision, contextVersion }) {
     return () => items.forEach(item => URL.revokeObjectURL(item.src));
   }, [revision]);
   const item = media[index];
-  return <><div className="wb-preview-heading"><b>内容预览</b><span>仅本地预览</span></div>
+  return <><div className="wb-preview-heading"><b>内容预览</b><span className="wb-preview-badge">仅本地预览 · 未发布</span></div>
     <div className="wb-preview-media" ref={preview}>{item ? item.type.startsWith("video/")
       ? <video key={item.src} src={item.src} controls preload="metadata" aria-label={item.name} />
       : <img key={item.src} src={item.src} alt={item.name} />
@@ -444,6 +469,7 @@ function App() {
     {createPortal(showConnection && <div className="wb-connection" role="status"><Icon name={!online ? "offline" : "alert"} /><span><b>{!online ? "当前离线" : "部分数据刷新失败"}</b> · 已保留输入与已加载的记录；提交前请确认连接恢复。</span>
       <button className="ghost sm" onClick={retry} disabled={!online || retrying}>{retrying ? "正在重试…" : "重新加载"}</button></div>, connectionTarget)}
     {createPortal(<Attention summary={summary} platform={ctx.platform} />, overviewTarget)}
+    {createPortal(<AgentAssistant page={ctx} />, $("agent-root"))}
     {createPortal(<PublishPreview revision={previewVersion} contextVersion={`${ctx.platform}/${accountsVersion}`} />, previewTarget)}
     {rows.map(row => { const slot = row.querySelector("[data-account-menu]");
       return slot && createPortal(<ActionMenu label={`${row.querySelector('[data-account-detail]')?.textContent.trim()}的更多操作`}
