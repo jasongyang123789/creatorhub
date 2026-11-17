@@ -11860,10 +11860,31 @@ async def _agent_render_cover(payload: dict, request: Request):
 
 async def _agent_render_packaging(payload: dict, request: Request):
     from .fusion import packaging
+    duration = payload.get("duration", 3.0)
+    recipe = str(payload.get("recipe") or "").strip()
+    recipe_note = ""
+    if recipe:
+        # 套用镜头卡：用卡上的时长覆盖（"3-5s" 这类区间取均值），并记录卡摘要
+        from .fusion import shots
+        card = shots.get_shot(recipe)
+        numbers = [int(value) for value in re.findall(r"\d+", str(card.get("duration", "")))]
+        if numbers:
+            duration = sum(numbers) / len(numbers)
+        recipe_note = str(card.get("summary", ""))[:80]
     result = await asyncio.to_thread(
         packaging.render_packaging, payload["lines"], payload.get("style", "kinetic"),
-        payload.get("duration", 3.0), payload.get("aspect", "9:16"))
-    return {"id": result["path"], "status": "created", "path": result["path"]}
+        duration, payload.get("aspect", "9:16"))
+    extra = {"recipe": recipe, "recipe_note": recipe_note} if recipe else {}
+    return {"id": result["path"], "status": "created", "path": result["path"], **extra}
+
+
+async def _agent_schedule_publish(payload: dict, request: Request):
+    from .fusion import publish
+    result = await asyncio.to_thread(
+        publish.create_publish_task, payload["asset_path"], payload["platform"],
+        payload["account_id"], payload.get("title", ""), payload.get("desc", ""),
+        payload.get("topics", ""), payload.get("scheduled_at"))
+    return {"id": result["id"], "status": "created", "path": payload["asset_path"]}
 
 
 from .agent.api import create_router as create_agent_router
@@ -11873,6 +11894,7 @@ app.include_router(create_agent_router({
     "create_monitor": _agent_create_monitor,
     "render_cover": _agent_render_cover,
     "render_packaging": _agent_render_packaging,
+    "schedule_publish": _agent_schedule_publish,
 }))
 
 

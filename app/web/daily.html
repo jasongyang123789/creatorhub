@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0f1420">
+<link rel="manifest" href="/api/fusion/daily/manifest.webmanifest">
+<title>创作日报 · CreatorHub</title>
+<style>
+:root{--bg:#0f1420;--card:#161d2e;--line:#253048;--tx:#e8ecf5;--dim:#8b96ad;--acc:#4f8bff}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--tx);font:15px/1.6 -apple-system,'PingFang SC','Microsoft YaHei',sans-serif;padding-bottom:40px}
+.head{padding:22px 18px 6px;display:flex;align-items:baseline;gap:10px}
+.head h1{font-size:19px;font-weight:800;letter-spacing:-.2px}
+.head span{color:var(--dim);font-size:12px}
+.wrap{padding:10px 18px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-top:14px}
+.card h2{font-size:13px;color:var(--dim);font-weight:600;letter-spacing:.4px;margin-bottom:10px}
+.item{padding:9px 0;border-top:1px solid var(--line);font-size:13.5px}
+.item:first-of-type{border-top:0}
+.item .t{font-weight:700;font-size:14px}
+.item .m{color:var(--dim);font-size:12px;margin-top:3px;word-break:break-all}
+.tag{display:inline-block;font-size:10.5px;padding:1px 8px;border-radius:999px;background:#1d2c4f;color:#7fb0ff;margin-right:6px}
+.empty{color:var(--dim);font-size:12.5px;padding:6px 0}
+.foot{color:var(--dim);font-size:11px;text-align:center;padding:18px}
+.hint{background:#16233c;border:1px solid #24365c;color:#9db8e8;font-size:12px;border-radius:10px;padding:10px 12px;margin-top:14px}
+</style>
+</head>
+<body>
+<div class="head"><h1>创作日报</h1><span id="date">…</span></div>
+<div class="wrap">
+  <div class="hint">添加到主屏幕后离线可看最近一次内容（PWA）。</div>
+  <div class="card"><h2>① 今天拍什么</h2><div id="s-topics"><div class="empty">加载中…</div></div></div>
+  <div class="card"><h2>② 今日对标</h2><div id="s-benchmark"><div class="empty">加载中…</div</div></div></div>
+  <div class="card"><h2>③ 新客户 / 索</2><div id="s-customers"><div class="empty">加载中…</div></div></div>
+  <div class="card"><h2>④ 今日资产</h2><div id="s-assets"><div class=" ['/']"></div></div></div>
+  <div class="foot">CreatorHub 融合层 · 每天打开一次，十分钟知道今天干什么</div>
+  <div class="foot">数据范围：本地 CreatorHub + radar；不访问平台。</div>
+</div>
+<script>
+async function api(){const r=await fetch('/api/fusion/daily');if(!r.ok)throw new Error('HTTP '+r.status);return r.json()}
+function esc(s){return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function items(list,render){return list.length?list.map(render).join(''):'<div class="empty">今天还没有</div>'}
+(async()=>{try{const d=await api();document.getElementById('date').textContent=d.date+' UTC';
+const s=d.sections;
+document.getElementById('s-topics').innerHTML=items(s.topics.items,x=>`<div class="item"><div class="t">${esc(x.title)}</div><div class="m"><span class="tag">${esc(x.format||'未定形式')}</span>${esc(x.angle||'')}</div></div>`)
++(s.topics.gaps?.length?`<div class="empty">${esc(s.topics.gaps.join('；'))}</div>`:'');
+document.getElementById('s-benchmark').innerHTML=items(s.benchmark.items,x=>`<div class="item"><div class="t">${esc(x.title||x.name||'未命名作品')}</div><div class="m">${esc(x.author||'')} · 赞 ${esc(x.like_count??x.like??0)}</div></div>`);
+document.getElementById('s-customers').innerHTML=items(s.customers.items,x=>`<div class="item"><div class="t">${esc(x.nickname)} <span class="tag">${esc(x.source)}</span></div><div class="m">${esc(x.text)} · ${esc((x.when||'').slice(5,16))}</div></div>`);
+document.getElementById('s-assets').innerHTML=items(s.assets.items,x=>`<div class="item"><div class="t"><a style="color:#7fb0ff;text-decoration:none" href="/api/fusion/file?path=${encodeURIComponent(x.path)}">${esc(x.name)}</a></div><div class="m"><span class="tag">${esc(x.kind)}</span>${(x.bytes/1024).toFixed(0)} KB</div></div>`);
+}catch(e){document.querySelectorAll('.empty').forEach(x=>x.textContent='加载失败：'+(e.message||e));}
+if('serviceWorker' in navigator){navigator.serviceWorker.register('/api/fusion/sw.js').catch(()=>{})}
+})();
+</script>
+</body>
+</html>

@@ -1,9 +1,11 @@
 """封面 / 图文卡片渲染：HTML 模板 → 无头 Chrome 截图 → PNG。
 
-三种风格对应三个已验证的设计来源：
+四种风格对应四个已验证的设计来源（只借鉴公开版式原则，代码自写）：
 - hallmark：编辑感排版、米白纸面、衬线大标题（hallmark 的反 AI 味原则）；
 - nothing：OLED 黑 + 点阵 + 等宽标签（nothing-design 的 tokens）；
-- huashu：高饱和色块 + 超粗中文标题（huashu-design 的成品感）。
+- huashu：高饱和色块 + 超粗中文标题（huashu-design 的成品感）；
+- guizang：瑞士国际主义——白底细点阵、无衬线超大字、克莱因蓝功能色
+  （guizang-ppt 风格 B 的版式原则）。
 """
 from __future__ import annotations
 
@@ -16,12 +18,12 @@ from .paths import FUSION_DIR, chrome_exe, ensure_dir, slugify
 
 SIZES = {"1080x1440": (1080, 1440), "1080x1920": (1080, 1920), "1920x1080": (1920, 1080),
          "1080x1080": (1080, 1080)}
-STYLES = ("hallmark", "nothing", "huashu")
+STYLES = ("hallmark", "nothing", "huashu", "guizang")
 
 
 def _title_size(style: str, width: int, length: int) -> int:
     """按标题字数选字号，避免长标题把末字挤到下一行。"""
-    base = {"nothing": 0.115, "huashu": 0.135, "hallmark": 0.105}[style]
+    base = {"nothing": 0.115, "huashu": 0.135, "hallmark": 0.105, "guizang": 0.125}[style]
     if length <= 5:
         factor = base
     elif length <= 7:
@@ -61,6 +63,14 @@ body{{-webkit-font-smoothing:antialiased;text-rendering:geometricPrecision}}
 .foot{color:#555}
 .tag{display:inline-block;background:#ffd34d;color:#111;font-weight:800;padding:10px 22px;border-radius:6px;font-size:%dpx;transform:rotate(-2deg)}""" % (
             width, int(height * 0.52), int(height * 0.30), max(18, int(width * 0.028)))
+    elif style == "guizang":
+        palette = """body{background:#ffffff;color:#111111;font-family:'Arial Black','Microsoft YaHei',system-ui,sans-serif}
+.wrap{background-image:radial-gradient(#dcdcdc 1px,transparent 1px);background-size:26px 26px}
+.kicker{font-family:ui-monospace,Consolas,monospace;color:#002FA7;font-weight:700}
+.title{font-weight:900;font-size:var(--title-size);letter-spacing:-.03em;line-height:1.02}
+.sub{color:#444444;font-family:'Microsoft YaHei',system-ui,sans-serif}
+.tag{display:inline-block;background:#002FA7;color:#ffffff;font-weight:800;padding:12px 26px;border-radius:2px;font-size:%dpx;letter-spacing:.04em}
+.foot{font-family:ui-monospace,Consolas,monospace;color:#8a8a8a}""" % (max(18, int(width * 0.028)))
     else:  # hallmark
         palette = """body{background:#faf7f0;color:#1a1a1a;font-family:Georgia,'Songti SC','Microsoft YaHei',serif}
 .title{font-size:var(--title-size);font-weight:700;line-height:1.06;letter-spacing:-.02em}
@@ -92,6 +102,12 @@ def _body(style: str, title: str, subtitle: str, badge: str, index: int) -> str:
                 f'<div><div class="tag">{subtitle}</div>'
                 f'<div class="foot" style="margin-top:24px"><span>CREATORHUB</span>'
                 f'<span class="num">{datetime.utcnow():%Y-%m-%d}</span></div></div>')
+    if style == "guizang":
+        return (f'<div><div class="kicker">{badge}</div>'
+                f'<div class="title">{title}</div></div>'
+                f'<div><div class="tag">{subtitle}</div>'
+                f'<div class="foot" style="margin-top:22px"><span>CREATORHUB / SWISS GRID</span>'
+                f'<span class="num">NO.{index:03d}</span></div></div>')
     return (f'<div><div class="kicker">{badge}</div>'
             f'<div class="title" style="margin-top:24px">{title}</div></div>'
             f'<div class="rule"></div>'

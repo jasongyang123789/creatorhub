@@ -122,9 +122,19 @@ def build_report(days: int = 1, today: date | None = None) -> dict:
             "collect": top_work.collect_count or 0,
         }
 
-    # ── 4. 今天建议(规则引擎) ─────────────────────────────────────
+    # ── 4. 今天建议(健康分驱动 + 规则引擎) ────────────────────────
     advice: list[str] = []
     advice.extend(login_warnings)
+    # 健康分 ≤60 的账号置顶提醒(与 /api/health-score 同一引擎,口径一致)
+    try:
+        from .health_score import compute_all
+        weak = [h for h in compute_all() if h["score"] <= 60]
+        for h in weak[:3]:
+            top = min(h["factors"], key=lambda f: -f["impact"]) if h["factors"] else None
+            advice.insert(0, f"🟡 健康分 {h['score']} 分:{h['nickname']}"
+                              +(f" —— 主要是{top['detail']}" if top else ""))
+    except Exception:
+        pass  # 健康分引擎异常不阻塞晨报
     three_days_ago = (today - timedelta(days=3) - date(1970, 1, 1)).total_seconds()
     zero_play = [w for w in new_works
                  if (w.play_count or 0) == 0

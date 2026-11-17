@@ -61,6 +61,10 @@ pre{background:#0f1420;color:#cfe3ff;border-radius:10px;padding:12px;font-size:1
     <button data-v="packaging">包装</button>
     <button data-v="explainer">讲解片</button>
     <button data-v="short">混剪</button>
+    <button data-v="diagram">架构图</button>
+    <button data-v="brandkit">品牌包</button>
+    <button data-v="preview">预览</button>
+    <button data-v="daily">日报</button>
     <button data-v="deai">去 AI 味</button>
     <button data-v="assets">资产</button>
   </div>
@@ -84,7 +88,7 @@ pre{background:#0f1420;color:#cfe3ff;border-radius:10px;padding:12px;font-size:1
       <label>标题</label><input id="c-title" value="一张报价单怎么谈">
       <label>副标题</label><input id="c-sub" value="华辰制造 · 8 万巡检设备">
       <div class="row">
-        <div><label>风格</label><select id="c-style"><option value="hallmark">hallmark 编辑感</option><option value="nothing">nothing 点阵</option><option value="huashu">huashu 色块</option></select></div>
+        <div><label>风格</label><select id="c-style"><option value="hallmark">hallmark 编辑感</option><option value="nothing">nothing 点阵</option><option value="huashu">huashu 色块</option><option value="guizang">guizang 瑞士网格</option></select></div>
         <div><label>尺寸</label><select id="c-size"><option>1080x1440</option><option>1080x1920</option><option>1920x1080</option><option>1080x1080</option></select></div>
       </div>
       <button class="btn" id="c-go" style="margin-top:12px">生成封面</button>
@@ -139,6 +143,81 @@ G:/VerifiedRepos/agent-skills/MoneyPrinterTurbo/storage/local_videos/mpt_test_2.
     <div class="panel"><h2>预览</h2><div id="s-out" class="out"><div class="empty">还没有生成</div></div></div>
   </div>
 
+  <div id="v-diagram" class="grid hide">
+    <div class="panel">
+      <h2>架构图</h2>
+      <label>标题</label><input id="d-title" value="CreatorHub 融合层架构">
+      <label>节点（JSON 数组：id/label/type/sub；type 可选 frontend/backend/database/cloud/security/bus/external，x/y 可选 0-1 比例坐标）</label>
+      <textarea id="d-nodes" style="min-height:150px">[
+  {"id": "radar", "label": "radar 选题雷达", "type": "external", "sub": "G:/ai-verify/radar"},
+  {"id": "api", "label": "fusion API 后端", "type": "backend", "sub": "FastAPI 路由"},
+  {"id": "db", "label": "SQLite 数据库", "type": "database", "sub": "会话/线索/任务"},
+  {"id": "ui", "label": "创作台 UI 前端", "type": "frontend", "sub": "fusion.html"},
+  {"id": "bus", "label": "PublishTask", "type": "bus", "sub": "发布任务队列"},
+  {"id": "mpt", "label": "MPT 混剪", "type": "cloud", "sub": "MoneyPrinterTurbo"}
+]</textarea>
+      <label>连线（JSON 数组：from/to/label，可选 dashed）</label>
+      <textarea id="d-edges" style="min-height:110px">[
+  {"from": "radar", "to": "api", "label": "topics_latest.md"},
+  {"from": "ui", "to": "api", "label": "fetch"},
+  {"from": "api", "to": "db", "label": "SQLModel"},
+  {"from": "api", "to": "bus", "label": "建发布草稿"},
+  {"from": "api", "to": "mpt", "label": "cli.py", "dashed": true}
+]</textarea>
+      <div class="row">
+        <div><label>尺寸</label><select id="d-size"><option>1600x1000</option><option>1920x1080</option><option>1080x1080</option></select></div>
+        <div style="display:flex;align-items:flex-end"><button class="btn" id="dg-go" style="width:100%">渲染架构图</button></div>
+      </div>
+      <div class="hint">无头 Chrome 截图，首次约 10–20 秒；节点自动布局，显式 x/y 优先。</div>
+    </div>
+    <div class="panel"><h2>预览</h2><div id="dg-out" class="out"><div class="empty">还没有生成</div></div></div>
+  </div>
+
+  <div id="v-brandkit" class="grid hide">
+    <div class="panel">
+      <h2>品牌包</h2>
+      <label>名称</label><input id="b-name" value="CreatorHub">
+      <label>调性词（空格分隔）</label><input id="b-adj" value="克制 几何 工业">
+      <label>强调色</label>
+      <select id="b-accent">
+        <option value="blue">blue 标准蓝</option>
+        <option value="ikb">ikb 国际克莱因蓝</option>
+        <option value="orange">orange 橙</option>
+        <option value="green">green 绿</option>
+        <option value="red">red 红</option>
+        <option value="black">black 黑</option>
+      </select>
+      <button class="btn" id="b-go" style="margin-top:12px">生成品牌包</button>
+      <div class="hint">三个概念 × 尺寸阶梯 / 单色 / 反白测试板；字稿为探索稿，定稿前请转路径并查重。</div>
+    </div>
+    <div class="panel"><h2>预览</h2><div id="b-out" class="out"><div class="empty">还没有生成</div></div></div>
+  </div>
+
+  <div id="v-preview" class="grid hide">
+    <div class="panel">
+      <h2>smyw 变更预览</h2>
+      <div class="hint">把 smyw spec JSON 交给 build.mjs，产出可拖动/批注的单文件预览页；spec 格式见 show-me-you-want skill。</div>
+      <label>名称（可选，用于目录名）</label><input id="pv-name" placeholder="如 task-tags">
+      <label>spec JSON</label>
+      <textarea id="pv-spec" style="min-height:180px" placeholder='{"title": "…", "changes": […]}'></textarea>
+      <button class="btn" id="pv-go" style="margin-top:12px">生成预览</button>
+    </div>
+    <div class="panel"><h2>结果</h2><div id="pv-out" class="out"><div class="empty">还没有生成</div></div></div>
+  </div>
+
+  <div id="v-daily" class="grid hide">
+    <div class="panel">
+      <h2>创作日报（PWA）</h2>
+      <p style="font-size:13px">每天一屏四块：今天拍什么 / 今日对标 / 新客户线索 / 当日资产，全部来自本地数据。</p>
+      <p style="font-size:13px;color:var(--dim)">手机浏览器打开后「添加到主屏幕」，即可作为独立 App 使用；离线时由 Service Worker 提供缓存版本。</p>
+      <button class="btn" id="daily-open" style="margin-top:12px">打开日报 PWA</button>
+    </div>
+    <div class="panel">
+      <h2>数据来源</h2>
+      <div class="hint">选题来自 radar 日报与本地已同步作品；对标来自本地作品库；客户线索来自私信/直播/评论；资产为当日 storage/fusion 产物。只读，不访问平台。</div>
+    </div>
+  </div>
+
   <div id="v-deai" class="grid hide">
     <div class="panel">
       <h2>去 AI 味质检</h2>
@@ -152,7 +231,7 @@ G:/VerifiedRepos/agent-skills/MoneyPrinterTurbo/storage/local_videos/mpt_test_2.
   <div id="v-assets" class="panel hide">
     <h2>已生成资产</h2>
     <div class="row" style="max-width:420px">
-      <div><label>类型</label><select id="a-kind"><option value="">全部</option><option value="cover">封面</option><option value="packaging">包装</option><option value="explainer">讲解片</option><option value="short">混剪</option><option value="extract">提取</option></select></div>
+      <div><label>类型</label><select id="a-kind"><option value="">全部</option><option value="cover">封面</option><option value="packaging">包装</option><option value="explainer">讲解片</option><option value="short">混剪</option><option value="diagram">架构图</option><option value="brandkit">品牌包</option><option value="preview">预览</option><option value="extract">提取</option></select></div>
       <div style="display:flex;align-items:flex-end"><button class="btn" id="a-go" style="width:100%">刷新</button></div>
     </div>
     <div id="a-out" class="out"><div class="empty">点刷新</div></div>
@@ -263,20 +342,130 @@ $('d-go').onclick = async () => {
   } catch (e) { err(out, e); }
 };
 
+// 架构图
+$('dg-go').onclick = async () => {
+  const out = $('dg-out'); out.innerHTML = '渲染中（约 10–20 秒）…';
+  try {
+    const nodes = JSON.parse($('d-nodes').value || '[]');
+    const edges = JSON.parse($('d-edges').value || '[]');
+    const d = await api('/diagram', {method: 'POST', body: JSON.stringify({
+      title: $('d-title').value, nodes, edges, size: $('d-size').value})});
+    out.innerHTML = `<img src="/api/fusion/file?path=${encodeURIComponent(d.path)}" alt="架构图">
+      <div class="hint">${esc(d.path)} · ${(d.bytes/1024).toFixed(0)} KB · ${d.width}x${d.height} · ${d.nodes} 节点 / ${d.edges} 连线</div>`;
+  } catch (e) { err(out, e); }
+};
+
+// 品牌包
+$('b-go').onclick = async () => {
+  const out = $('b-out'); out.innerHTML = '生成中（约 10–20 秒）…';
+  try {
+    const d = await api('/brandkit', {method: 'POST', body: JSON.stringify({
+      name: $('b-name').value, adjectives: $('b-adj').value, accent: $('b-accent').value})});
+    out.innerHTML = `<img src="/api/fusion/file?path=${encodeURIComponent(d.board)}" alt="测试板">
+      <div class="hint">${esc(d.dir)} · ${(d.bytes/1024).toFixed(0)} KB</div>` +
+      d.concepts.map(c => `<div class="card"><div class="t">${esc(c.name)}</div>
+        <div class="m">${esc(c.idea)} · <a href="/api/fusion/file?path=${encodeURIComponent(c.svg)}" target="_blank">SVG</a></div></div>`).join('') +
+      `<div class="hint">${esc(d.note)}</div>`;
+  } catch (e) { err(out, e); }
+};
+
+// 预览
+$('pv-go').onclick = async () => {
+  const out = $('pv-out'); out.innerHTML = '生成中（Node 构建，约 10–60 秒）…';
+  try {
+    const spec = JSON.parse($('pv-spec').value);
+    const d = await api('/preview', {method: 'POST', body: JSON.stringify({spec, name: $('pv-name').value})});
+    out.innerHTML = `<div class="hint">已生成（${(d.bytes/1024).toFixed(0)} KB） · ${esc(d.path)}</div>
+      <button class="btn" id="pv-open">打开预览</button>`;
+    $('pv-open').onclick = () => window.open('/api/fusion/file?path=' + encodeURIComponent(d.path));
+  } catch (e) { err(out, e); }
+};
+
+// 日报
+$('daily-open').onclick = () => window.open('/api/fusion/daily/ui');
+
+// 发布：已登录账号（主工作台接口，不走 /api/fusion 前缀）
+let accounts = [];
+function fillAccountSelect(sel) {
+  sel.innerHTML = accounts.map(a =>
+    `<option value="${a.account_id}">${esc(a.nickname || '未命名')}·${esc(a.platform)} #${a.account_id}</option>`).join('')
+    || '<option value="">无已登录账号</option>';
+}
+fetch('/api/accounts/workbench').then(r => r.json()).then(list => {
+  accounts = (list || []).filter(a => a.status === 'active');
+  document.querySelectorAll('.pub-account').forEach(fillAccountSelect);
+}).catch(() => {});
+
 // 资产
+const MEDIA_KIND = {cover: 'images', brandkit: 'images', packaging: 'video', explainer: 'video', short: 'video'};
+function mediaTypeOf(x) {
+  const kind = MEDIA_KIND[x.kind];
+  if (!kind) return null;
+  const name = (x.name || '').toLowerCase();
+  if (kind === 'images' && (name.endsWith('.png') || name.endsWith('.jpg'))) return 'images';
+  if (kind === 'video' && name.endsWith('.mp4')) return 'video';
+  return null;
+}
 async function loadAssets() {
   const out = $('a-out'); out.innerHTML = '加载中…';
   try {
     const d = await api('/assets?limit=60' + ($('a-kind').value ? '&kind=' + $('a-kind').value : ''));
     if (!d.items.length) { out.innerHTML = '<div class="empty">还没有产物</div>'; return; }
-    out.innerHTML = d.items.map(x => `<div class="card">
+    out.innerHTML = d.items.map(x => {
+      const media = mediaTypeOf(x);
+      return `<div class="card">
       <div class="t">${esc(x.name)}</div>
       <div class="m"><span class="tag">${esc(x.kind)}</span>${(x.bytes/1024).toFixed(0)} KB ·
-        <a href="/api/fusion/file?path=${encodeURIComponent(x.path)}" target="_blank">打开</a></div>
-    </div>`).join('');
+        <a href="/api/fusion/file?path=${encodeURIComponent(x.path)}" target="_blank">打开</a>
+        ${media ? ' · <button class="btn ghost pub-btn" style="padding:3px 12px;font-size:12px" data-path="' + esc(x.path) + '">发布</button>' : ''}</div>
+      ${media ? `<div class="pub-form hide" style="margin-top:10px;border-top:1px dashed var(--line);padding-top:10px">
+        <label>账号</label><select class="pub-account"></select>
+        <label>标题（≤20 字）</label><input class="pub-title" maxlength="20">
+        <label>正文</label><textarea class="pub-desc" style="min-height:60px"></textarea>
+        <label>话题（逗号分隔，不带 #）</label><input class="pub-topics">
+        <label>预约时间（留空尽快发，需到发布页确认排队）</label><input class="pub-when" type="datetime-local">
+        <button class="btn pub-confirm" style="margin-top:10px">创建发布草稿</button>
+        <div class="pub-msg out"></div>
+      </div>` : ''}
+    </div>`;}).join('');
+    document.querySelectorAll('.pub-account').forEach(fillAccountSelect);
   } catch (e) { err(out, e); }
 }
 $('a-go').onclick = loadAssets;
+
+// 资产卡上的发布按钮与确认（事件委托：卡片是动态渲染的）
+$('a-out').addEventListener('click', async e => {
+  const pubBtn = e.target.closest('.pub-btn');
+  if (pubBtn) {
+    const form = pubBtn.closest('.card').querySelector('.pub-form');
+    form.classList.toggle('hide');
+    fillAccountSelect(form.querySelector('.pub-account'));
+    return;
+  }
+  const confirmBtn = e.target.closest('.pub-confirm');
+  if (!confirmBtn) return;
+  const card = confirmBtn.closest('.card');
+  const msg = card.querySelector('.pub-msg');
+  const pubBtn2 = card.querySelector('.pub-btn');
+  const accountSel = card.querySelector('.pub-account');
+  const accountId = accountSel.value;
+  const account = accounts.find(a => String(a.account_id) === String(accountId));
+  if (!account) {
+    msg.innerHTML = '<div class="issue high">还没有已登录账号，请先到账号页登录</div>';
+    return;
+  }
+  const when = card.querySelector('.pub-when').value;
+  msg.textContent = '创建中…';
+  try {
+    const d = await api('/publish-task', {method: 'POST', body: JSON.stringify({
+      asset_path: pubBtn2.dataset.path, platform: account.platform, account_id: Number(accountId),
+      title: card.querySelector('.pub-title').value,
+      desc: card.querySelector('.pub-desc').value,
+      topics: card.querySelector('.pub-topics').value,
+      scheduled_at: when && !isNaN(new Date(when)) ? new Date(when).toISOString() : null})});
+    msg.innerHTML = `<div class="hint">发布草稿 #${d.id} 已创建（发布页确认后排队）</div>`;
+  } catch (err2) { err(msg, err2); }
+});
 </script>
 </body>
 </html>

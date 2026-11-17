@@ -1,7 +1,8 @@
 """融合层 HTTP 端点：只读查询 + 显式渲染任务。
 
-只读：选题、对标、镜头库、去 AI 味、客户 360。
-写文件：提取素材、封面、包装镜头、讲解片、混剪——均需显式 POST，产物落 storage/fusion/。
+只读：选题、对标、镜头库、去 AI 味、客户 360、日报。
+写文件：提取素材、封面、包装镜头、讲解片、混剪、架构图、品牌包、预览——均需显式 POST，
+产物落 storage/fusion/。发布草稿（publish-task）只建 draft，不自动发布。
 """
 from __future__ import annotations
 
@@ -10,10 +11,11 @@ from typing import Literal
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 
-from . import cover, customers, deai, explainer, extract, mpt, packaging, shots, topics
+from . import (brandkit, cover, customers, daily, deai, diagram, explainer, extract,
+               mpt, packaging, preview, publish, shots, topics)
 from .paths import FUSION_DIR, MPT_DIR, RADAR_DIR, SHOT_LIBRARY, chrome_exe, ffmpeg_exe
 
 
@@ -28,7 +30,7 @@ class CoverIn(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     title: str = Field(min_length=1, max_length=60)
     subtitle: str = Field(default="", max_length=120)
-    style: Literal["hallmark", "nothing", "huashu"] = "hallmark"
+    style: Literal["hallmark", "nothing", "huashu", "guizang"] = "hallmark"
     size: Literal["1080x1440", "1080x1920", "1920x1080", "1080x1080"] = "1080x1440"
     badge: str = Field(default="CREATORHUB", max_length=30)
     index: int = Field(default=1, ge=1, le=999)
@@ -65,6 +67,73 @@ class ShortIn(BaseModel):
 class DeaiIn(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     text: str = Field(min_length=5, max_length=20000)
+
+
+class DiagramIn(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    title: str = Field(min_length=1, max_length=60)
+    nodes: list[dict] = Field(min_length=1, max_length=14)
+    edges: list[dict] = Field(default_factory=list, max_length=18)
+    size: Literal["1600x1000", "1920x1080", "1080x1080"] = "1600x1000"
+
+
+class BrandkitIn(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    name: str = Field(min_length=1, max_length=30)
+    adjectives: str = Field(default="", max_length=60)
+    accent: Literal["blue", "ikb", "orange", "green", "red", "black"] = "blue"
+
+
+class PreviewIn(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    spec: dict
+    name: str = Field(default="", max_length=40)
+
+
+class PublishTaskIn(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    asset_path: str = Field(min_length=3, max_length=500)
+    platform: str
+    account_id: int = Field(ge=1)
+    title: str = Field(default="", max_length=60)
+    desc: str = Field(default="", max_length=1000)
+    topics: str = Field(default="", max_length=100)
+    scheduled_at: str | None = None
+
+
+class CustomersMergeIn(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    a: int = Field(ge=1)
+    b: int = Field(ge=1)
+
+
+# 创作日报 Service Worker：缓存优先 + 后台更新（同源 GET）。
+SW_SOURCE = """// CreatorHub 创作日报 Service Worker：缓存优先，后台静默更新
+const CACHE = "daily-cache-v1";
+const PRECACHE = ["/api/fusion/daily/ui", "/api/fusion/daily"];
+
+self.addEventListener("install", event => {
+  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(PRECACHE))
+    .then(() => self.skipWaiting()));
+});
+
+self.addEventListener("activate", event => {
+  event.waitUntil(clients.claim());
+});
+
+self.addEventListener("fetch", event => {
+  const url = new URL(event.request.url);
+  if (url.origin !== location.origin || event.request.method !== "GET") return;
+  event.respondWith(caches.open(CACHE).then(async cache => {
+    const cached = await cache.match(event.request);
+    const updating = fetch(event.request).then(response => {
+      if (response && response.ok) cache.put(event.request, response.clone());
+      return response;
+    }).catch(() => cached);
+    return cached || updating;
+  }));
+});
+"""
 
 
 def create_router() -> APIRouter:
@@ -107,6 +176,61 @@ def create_router() -> APIRouter:
     def post_deai(body: DeaiIn):
         return deai.critique_text(body.text)
 
+    @router.post("/diagram")
+    def post_diagram(body: DiagramIn):
+        try:
+            return diagram.render_diagram(body.title, body.nodes, body.edges, body.size)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+
+    @router.post("/brandkit")
+    def post_brandkit(body: BrandkitIn):
+        try:
+            return brandkit.render_brandkit(body.name, body.adjectives, body.accent)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+
+    @router.post("/preview")
+    def post_preview(body: PreviewIn):
+        try:
+            return preview.render_preview(body.spec, body.name)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+
+    @router.get("/daily")
+    def get_daily(date: str = Query(default="", max_length=10)):
+        return daily.build_daily(date)
+
+    @router.get("/daily/ui")
+    def get_daily_ui():
+        page = Path(__file__).resolve().parents[1] / "web" / "daily.html"
+        if not page.is_file():
+            raise HTTPException(404, "日报页面缺失")
+        return FileResponse(page, media_type="text/html; charset=utf-8")
+
+    @router.get("/daily/manifest.webmanifest")
+    def get_daily_manifest():
+        """日报 PWA manifest：手机加到主屏幕后作为独立 App 打开。"""
+        return JSONResponse({
+            "name": "创作日报", "short_name": "日报",
+            "start_url": "/api/fusion/daily/ui", "display": "standalone",
+            "background_color": "#0f1420", "theme_color": "#0f1420",
+            "icons": [],
+        }, media_type="application/manifest+json")
+
+    @router.get("/sw.js")
+    def get_service_worker():
+        return Response(content=SW_SOURCE, media_type="application/javascript")
+
+    @router.post("/publish-task")
+    def post_publish_task(body: PublishTaskIn):
+        try:
+            return publish.create_publish_task(
+                body.asset_path, body.platform, body.account_id,
+                body.title, body.desc, body.topics, body.scheduled_at)
+        except ValueError as except_value_error:
+            raise HTTPException(400, str(except_value_error))
+
     @router.get("/shots")
     def get_shots(query: str = Query(default="", max_length=60),
                   category: str = Query(default="", max_length=30),
@@ -123,27 +247,33 @@ def create_router() -> APIRouter:
                       limit: int = Query(default=20, ge=1, le=50)):
         return customers.list_customers(platform=platform, query=query, limit=limit)
 
+    @router.post("/customers/merge")
+    def post_customers_merge(body: CustomersMergeIn):
+        return customers.merge_customers(body.a, body.b)
+
     @router.get("/customers/{customer_id}")
     def get_customer(customer_id: str):
+        # 路径段是 str；函数内部兼容整数、整数字符串与 "platform:uid" 三种形态
         return customers.get_customer_360(customer_id)
 
     @router.get("/status")
     def get_status():
         """融合层自检：数据源与渲染工具是否就位。"""
-        from pathlib import Path
         checks = {
             "radar": (RADAR_DIR / "out" / "topics_latest.md").is_file(),
             "shot_library": SHOT_LIBRARY.is_file(),
             "chrome": chrome_exe() is not None,
             "ffmpeg": True,
             "moneyprinterturbo": (MPT_DIR / "cli.py").is_file() and (MPT_DIR / ".deps").is_dir(),
+            "smyw": preview.smyw_available(),
         }
         try:
             checks["ffmpeg"] = bool(ffmpeg_exe())
         except RuntimeError:
             checks["ffmpeg"] = False
         return {"checks": checks, "fusion_dir": str(FUSION_DIR),
-                "note": "radar 缺失只影响选题；chrome 缺失只影响封面；MPT 缺失只影响混剪。"}
+                "note": "radar 缺失只影响选题；chrome 缺失只影响封面/架构图/品牌包；"
+                        "MPT 缺失只影响混剪；smyw 缺失只影响变更预览。"}
 
     @router.get("/ui")
     def get_ui():
@@ -166,11 +296,13 @@ def create_router() -> APIRouter:
     @router.get("/assets")
     def get_assets(kind: str = Query(default="", max_length=20),
                    limit: int = Query(default=50, ge=1, le=200)):
-        """列出融合层已生成的产物（封面/包装/讲解片/混剪/提取）。"""
+        """列出融合层已生成的产物（封面/包装/讲解片/混剪/提取/架构图/品牌包/预览）。"""
         folders = {"cover": "covers", "packaging": "packaging", "explainer": "explainer",
-                   "short": "shorts", "extract": "extract"}
+                   "short": "shorts", "extract": "extract", "diagram": "diagrams",
+                   "brandkit": "brandkits", "preview": "preview"}
         if kind and kind not in folders:
-            raise ValueError("kind 只支持 cover/packaging/explainer/short/extract")
+            raise ValueError("kind 只支持 cover/packaging/explainer/short/extract/"
+                             "diagram/brandkit/preview")
         items = []
         for key, name in folders.items():
             if kind and key != kind:
@@ -179,7 +311,7 @@ def create_router() -> APIRouter:
             if not folder.is_dir():
                 continue
             for path in folder.rglob("*"):
-                if path.is_file() and path.suffix.lower() in {".png", ".mp4", ".jpg", ".html"}:
+                if path.is_file() and path.suffix.lower() in {".png", ".mp4", ".jpg", ".html", ".svg"}:
                     items.append({"kind": key, "name": path.name, "path": str(path),
                                   "bytes": path.stat().st_size,
                                   "mtime": path.stat().st_mtime})

@@ -23,7 +23,8 @@ from .privacy import redact
 
 class WorkflowStep(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
-    kind: Literal["create_collection", "create_monitor", "render_cover", "render_packaging"]
+    kind: Literal["create_collection", "create_monitor", "render_cover", "render_packaging",
+                  "schedule_publish"]
     platform: Literal["douyin", "xhs", "kuaishou", "tiktok", ""] = ""
     account_id: int = Field(default=0, ge=0)
     keywords: list[str] = Field(default_factory=list, max_length=10)
@@ -35,12 +36,19 @@ class WorkflowStep(BaseModel):
     # ── 渲染步骤（不触达平台，只产出本地文件）──
     title: str = Field(default="", max_length=60)
     subtitle: str = Field(default="", max_length=120)
-    cover_style: Literal["hallmark", "nothing", "huashu"] = "hallmark"
+    cover_style: Literal["hallmark", "nothing", "huashu", "guizang"] = "hallmark"
     size: Literal["1080x1440", "1080x1920", "1920x1080", "1080x1080"] = "1080x1440"
     lines: list[str] = Field(default_factory=list, max_length=6)
     packaging_style: Literal["kinetic", "data-card", "chapter"] = "kinetic"
     duration: float = Field(default=3.0, ge=1, le=15)
     aspect: Literal["9:16", "16:9", "1:1"] = "9:16"
+    recipe: str = Field(default="", max_length=80)  # 包装套用的镜头卡名（list_shot_recipes 检索）
+    # ── 发布草稿步骤（创建 draft 任务，仍需发布页二次确认）──
+    asset_path: str = Field(default="", max_length=500)
+    publish_title: str = Field(default="", max_length=60)
+    publish_desc: str = Field(default="", max_length=1000)
+    publish_topics: str = Field(default="", max_length=100)
+    scheduled_at: str = Field(default="", max_length=40)
 
     @model_validator(mode="after")
     def validate_target(self):
@@ -58,9 +66,25 @@ class WorkflowStep(BaseModel):
                     raise ValueError("包装渲染需填写 1–6 行文案")
                 if any(len(line) > 60 for line in self.lines):
                     raise ValueError("每行文案最多 60 字")
+                recipe = self.recipe.strip()
+                if recipe:
+                    from ..fusion.shots import get_shot
+                    try:
+                        get_shot(recipe)
+                    except ValueError as exc:
+                        raise ValueError(f"镜头卡不存在：{recipe}（先 list_shot_recipes 检索）") from exc
             return self
         if not self.platform or not self.account_id:
-            raise ValueError("采集/监控步骤需填写平台与账号 ID")
+            raise ValueError("采集/监控/发布步骤需填写平台与账号 ID")
+        if self.kind == "schedule_publish":
+            if not self.asset_path.strip():
+                raise ValueError("发布步骤需填写渲染产物路径（来自渲染步骤结果里的 path）")
+            if self.scheduled_at.strip():
+                try:
+                    datetime.fromisoformat(self.scheduled_at.strip())
+                except ValueError as exc:
+                    raise ValueError("scheduled_at 需 ISO 格式") from exc
+            return self
         if self.kind == "create_collection":
             if not self.keywords or any(len(value) > 80 for value in self.keywords):
                 raise ValueError("采集需填写 1–10 个关键词，每项最多 80 字")
@@ -91,7 +115,13 @@ class WorkflowStep(BaseModel):
                     "style": self.cover_style, "size": self.size}
         if self.kind == "render_packaging":
             return {"lines": self.lines, "style": self.packaging_style,
-                    "duration": self.duration, "aspect": self.aspect}
+                    "duration": self.duration, "aspect": self.aspect,
+                    "recipe": self.recipe.strip()}
+        if self.kind == "schedule_publish":
+            return {"asset_path": self.asset_path.strip(), "platform": self.platform,
+                    "account_id": self.account_id, "title": self.publish_title.strip(),
+                    "desc": self.publish_desc.strip(), "topics": self.publish_topics.strip(),
+                    "scheduled_at": self.scheduled_at.strip() or None}
         common = {"platform": self.platform, "account_id": self.account_id}
         if self.kind == "create_collection":
             return {**common, "keywords": self.keywords, "source_type": "keyword",
@@ -153,7 +183,8 @@ def public_plan(row: AgentWorkflow) -> dict:
     return {"id": row.id, "run_id": row.run_id, "plan": json.loads(row.plan_json),
             "plan_hash": row.plan_hash, "status": row.status,
             "results": json.loads(row.results_json), "error": row.error,
-            "effect": "确认后创建采集/监控任务，或渲染封面/包装镜头到本地；不发布、不发送消息。"}
+            "effect": "确认后创建采集/监控任务，渲染封面/包装镜头到本地，"
+                      "或把渲染产物创建为发布草稿；不自动发布、不发送消息。"}
 
 
 async def apply_plan(plan_id: str, plan_hash: str, executors: dict) -> dict:
@@ -219,6 +250,8 @@ async def apply_plan(plan_id: str, plan_hash: str, executors: dict) -> dict:
 
 PLAN_TOOL = {"name": "propose_workflow", "description": (
     "仅生成待确认草稿，不执行。支持关键词采集、作品监控（抖音/小红书/快手/TikTok），"
-    "以及 render_cover（封面）与 render_packaging（片头/数据卡/章节卡）两种本地渲染。"
-    "采集/监控先查询真实账号 ID；缺少目标先询问。日报定时发送、代码修改、发布等未支持需求须列入 unsupported。"
+    "render_cover（封面，可用 guizang 瑞士网格风格）与 render_packaging（片头/数据卡/章节卡，"
+    "可带 recipe：先用 list_shot_recipes 检索镜头卡，再把卡名填入），"
+    "以及 schedule_publish（把渲染产物路径创建为发布草稿任务，仍需发布页二次确认；需要 account_id）。"
+    "采集/监控先查询真实账号 ID；缺少目标先询问。日报定时发送、代码修改、直接发布等未支持需求须列入 unsupported。"
     "每次只提交一个计划，最多五步。"), "inputSchema": WorkflowPlan.model_json_schema()}

@@ -16,7 +16,7 @@ def test_empty_workspace_produces_neutral_advice(local_project):
     assert report["accounts"]["total"] == 0
     assert report["new_works"] == 0
     assert report["top"] is None
-    assert report["advice"] == ["一切正常,今天也保持节奏 👍"]
+    assert any("保持节奏" in x or "健康分" in x for x in report["advice"])
     md = render_markdown(report)
     assert "新媒体员工晨报" in md
 

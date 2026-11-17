@@ -919,3 +919,34 @@ class ShareDownloadRecord(SQLModel, table=True):
     metadata_json: str = "{}"
     error: str = ""
     created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+
+
+class FusionCustomer(SQLModel, table=True):
+    """融合层客户主档：跨源身份合并后的单一客户（OneID 归并）。"""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    display_name: str = ""
+    platform: str = ""                      # 主平台（首个身份所在平台）
+    stage: str = Field(default="new", index=True)  # new | following | won | lost
+    score: int = 0
+    note: str = ""
+    tags: str = "[]"                        # JSON 数组
+    first_seen: Optional[datetime] = None
+    last_seen: Optional[datetime] = None
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class FusionCustomerIdentity(SQLModel, table=True):
+    """客户身份：把私信/线索/评论里的平台账号挂到客户主档上。
+
+    (platform, uid) 唯一；同一客户可挂多个平台身份（跨平台 OneID）。
+    uid 用 sec_uid / user_id；评论来源在抖音可用 sec_uid 归并。
+    """
+    id: Optional[int] = Field(default=None, primary_key=True)
+    customer_id: int = Field(index=True)
+    platform: str = Field(index=True)
+    uid: str = Field(index=True)
+    source: str = "dm"                      # dm | lead | comment
+    display_name: str = ""
+    last_seen: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)

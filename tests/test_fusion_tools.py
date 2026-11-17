@@ -1,13 +1,22 @@
-"""融合层离线回归：选题解析、去 AI 味、镜头库、封面/包装/讲解片真实渲染。"""
+"""融合层离线回归：选题解析、去 AI 味、镜头库、封面/包装/讲解片/架构图/品牌包/预览真实渲染、
+日报聚合、OneID 客户归并、发布草稿与工作流校验。"""
 from __future__ import annotations
 
 import asyncio
+import json
+import os
+import time
+from datetime import datetime
+from pathlib import Path
 
 import pytest
 
 import app.db as db
 import app.main as main  # noqa: F401
-from app.fusion import cover, customers, deai, explainer, extract, packaging, shots, topics
+from app.fusion import (brandkit, cover, customers, daily, deai, diagram, explainer,
+                        extract, packaging, preview, publish, shots, topics)
+from app.models import (CommentRecord, DmConversation, DmMessage, DouyinAccount,
+                        LiveLead, PublishTask)
 
 
 @pytest.fixture()
@@ -145,3 +154,181 @@ def test_explainer_renders_mp4(tmp_path, monkeypatch):
     assert result["duration"] >= 2
     assert result["bytes"] > 3000
     assert result["scenes"]
+
+
+# ── 架构图 / 品牌包 / 预览 / 日报 ──
+
+@pytest.mark.skipif(diagram.chrome_exe() is None, reason="需要 Chrome/Edge")
+def test_diagram_renders_png(tmp_path, monkeypatch):
+    monkeypatch.setattr(diagram, "FUSION_DIR", tmp_path)
+    result = diagram.render_diagram(
+        "CreatorHub 融合层",
+        [{"id": "api", "label": "fusion API", "type": "backend", "sub": "FastAPI"},
+         {"id": "db", "label": "SQLite", "type": "database"},
+         {"id": "ui", "label": "创作台 UI", "type": "frontend"}],
+        [{"from": "ui", "to": "api", "label": "fetch"}])
+    assert result["path"].endswith(".png")
+    assert result["bytes"] > 3000
+    assert result["nodes"] == 3 and result["edges"] == 1
+
+
+@pytest.mark.skipif(brandkit.chrome_exe() is None, reason="需要 Chrome/Edge")
+def test_brandkit_renders_board(tmp_path, monkeypatch):
+    monkeypatch.setattr(brandkit, "FUSION_DIR", tmp_path)
+    result = brandkit.render_brandkit("华辰制造", "克制 几何 工业", accent="ikb")
+    assert result["board"].endswith("board.png")
+    assert result["bytes"] > 5000
+    assert len(result["concepts"]) == 3
+
+
+@pytest.mark.skipif(not preview.smyw_available(), reason="需要 Node 与 smyw skill 仓库")
+def test_preview_builds_html(tmp_path, monkeypatch):
+    example = Path("G:/VerifiedRepos/agent-skills/show-me-you-want-skill/"
+                   "skills/smyw/examples/task-tags/spec.json")
+    spec = json.loads(example.read_text(encoding="utf-8"))
+    monkeypatch.setattr(preview, "FUSION_DIR", tmp_path)
+    result = preview.render_preview(spec, name="task-tags")
+    assert result["path"].endswith("preview.html")
+    assert result["bytes"] > 0
+
+
+def test_daily_build_sections(temp_db, tmp_path, monkeypatch):
+    folder = tmp_path / "covers"
+    folder.mkdir()
+    png = folder / "cover-demo.png"
+    png.write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 64)
+    now = time.time()
+    os.utime(png, (now, now))
+    monkeypatch.setattr(daily, "FUSION_DIR", tmp_path)
+    result = daily.build_daily()
+    assert set(result["sections"]) == {"topics", "benchmark", "customers", "assets"}
+    assets = result["sections"]["assets"]["items"]
+    assert any(item["name"] == "cover-demo.png" and item["kind"] == "cover" for item in assets)
+
+
+# ── OneID 客户 ──
+
+def test_customers_oneid_sync_360_merge(temp_db):
+    now = int(time.time())
+    with db.get_session() as session:
+        session.add(DmConversation(platform="douyin", account_id=1, conv_id="c1",
+                                   peer_uid="u1", peer_nickname="王工", last_time=now))
+        session.add(DmMessage(platform="douyin", account_id=1, conv_id="c1", msg_id="m1",
+                              direction="in", text="在吗", create_time=now))
+        session.add(LiveLead(platform="douyin", account_id=1, user_id="u1", nickname="王工",
+                             status="new", score=80,
+                             updated_at=datetime.utcfromtimestamp(now)))
+        session.add(CommentRecord(platform="douyin", aweme_id="a1", comment_id="c01",
+                                  user_nickname="王工", user_sec_uid="sec1",
+                                  create_time=now, text="多少钱"))
+        session.commit()
+
+    result = customers.list_customers()
+    assert result["total"] >= 1
+    first = result["items"][0]
+    assert first["display_name"] == "王工"
+    assert {"id", "display_name", "platform", "stage", "score",
+            "identities", "last_seen", "note"} <= set(first)
+
+    card = customers.get_customer_360(first["id"])
+    assert card["messages"] and card["leads"] and card["comments"]
+    assert card["suggestions"]
+
+    # 第二个客户（李总）→ 归并到第一个客户后身份 >=3，b 行删除
+    with db.get_session() as session:
+        session.add(DmConversation(platform="douyin", account_id=1, conv_id="c2",
+                                   peer_uid="u2", peer_nickname="李总", last_time=now))
+        session.commit()
+    customers.list_customers()
+    merged = customers.merge_customers(first["id"], first["id"] + 1)
+    assert len(merged["identities"]) >= 3
+    with pytest.raises(ValueError):
+        customers.get_customer_360(first["id"] + 1)
+
+
+def test_customers_update_and_identity_lookup(temp_db):
+    now = int(time.time())
+    with db.get_session() as session:
+        session.add(DmConversation(platform="douyin", account_id=1,
+                                   peer_uid="u9", peer_nickname="赵姐", last_time=now))
+        session.commit()
+    customers.list_customers()
+    # "platform:uid" 形态的身份串可定位到同一客户
+    card = customers.get_customer_360("douyin:u9")
+    assert card["nickname"] == "赵姐"
+    updated = customers.update_customer(card["id"], stage="following", note="周三回访")
+    assert updated["stage"] == "following"
+    with pytest.raises(ValueError):
+        customers.update_customer(card["id"], stage="成交")
+    with pytest.raises(ValueError):
+        customers.get_customer_360("douyin:none")
+
+
+# ── 发布草稿 ──
+
+def test_publish_task_draft_and_guards(temp_db, tmp_path, monkeypatch):
+    monkeypatch.setattr(publish, "FUSION_DIR", tmp_path)
+    media = tmp_path / "covers"
+    media.mkdir()
+    video = media / "demo.mp4"
+    video.write_bytes(b"0" * 2048)
+    with db.get_session() as session:
+        session.add(DouyinAccount(nickname="测试号"))  # platform=douyin / status=active 默认
+        session.commit()
+
+    result = publish.create_publish_task(str(video), "douyin", 1,
+                                         title="这个标题一定超过二十个字因为重复了很多遍哦",
+                                         desc="正文", scheduled_at="2026-11-18T09:30:00+08:00")
+    assert result["id"] and result["status"] == "draft"
+    with db.get_session() as session:
+        row = session.get(PublishTask, result["id"])
+        assert row.status == "draft"
+        assert row.media_type == "video"
+        assert len(row.title) <= 20
+        assert row.scheduled_at_is_utc is True
+        assert row.scheduled_at == datetime(2026, 11, 18, 1, 30)  # +08:00 → UTC
+
+    with pytest.raises(ValueError):  # FUSION_DIR 外的路径
+        publish.create_publish_task(str(tmp_path.parent / "outside.mp4"), "douyin", 1)
+    with pytest.raises(ValueError):  # 平台与账号不匹配
+        publish.create_publish_task(str(video), "xhs", 1)
+    with pytest.raises(ValueError):  # 预约时间格式
+        publish.create_publish_task(str(video), "douyin", 1, scheduled_at="明天下午")
+
+
+# ── 工作流：recipe 与 schedule_publish ──
+
+def test_workflow_packaging_recipe_payload(temp_db):
+    from app.agent.workflows import validate_plan
+    card = shots.list_shots(query="标题", limit=1)["items"][0]
+    plan = validate_plan({"title": "包装计划", "steps": [{
+        "kind": "render_packaging", "lines": ["第一行"], "recipe": card["name"]}]})
+    assert plan.steps[0].payload()["recipe"] == card["name"]
+    with pytest.raises(ValueError):
+        validate_plan({"title": "包装计划", "steps": [{
+            "kind": "render_packaging", "lines": ["第一行"], "recipe": "不存在的镜头卡"}]})
+
+
+def test_workflow_schedule_publish_validation():
+    from app.agent.workflows import WorkflowPlan
+    with pytest.raises(ValueError):  # 缺 asset_path
+        WorkflowPlan.model_validate({"title": "发布计划", "steps": [{
+            "kind": "schedule_publish", "platform": "douyin", "account_id": 1}]})
+    with pytest.raises(ValueError):  # scheduled_at 非 ISO
+        WorkflowPlan.model_validate({"title": "发布计划", "steps": [{
+            "kind": "schedule_publish", "platform": "douyin", "account_id": 1,
+            "asset_path": "G:/x/demo.mp4", "scheduled_at": "明天"}]})
+    step = WorkflowPlan.model_validate({"title": "发布计划", "steps": [{
+        "kind": "schedule_publish", "platform": "douyin", "account_id": 1,
+        "asset_path": "G:/x/demo.mp4", "publish_title": "标题", "publish_desc": "正文",
+        "publish_topics": "话题", "scheduled_at": "2026-11-18T09:30:00"}]}).steps[0]
+    payload = step.payload()
+    assert payload["asset_path"] == "G:/x/demo.mp4"
+    assert payload["platform"] == "douyin" and payload["account_id"] == 1
+    assert payload["title"] == "标题" and payload["desc"] == "正文"
+    assert payload["topics"] == "话题"
+    assert payload["scheduled_at"] == "2026-11-18T09:30:00"
+    empty = WorkflowPlan.model_validate({"title": "发布计划", "steps": [{
+        "kind": "schedule_publish", "platform": "douyin", "account_id": 1,
+        "asset_path": "G:/x/demo.mp4"}]}).steps[0].payload()
+    assert empty["scheduled_at"] is None and empty["title"] == ""
