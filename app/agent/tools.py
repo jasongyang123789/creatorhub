@@ -9,6 +9,10 @@ from sqlalchemy import func
 from sqlmodel import select
 
 from ..db import get_session
+from ..fusion import customers as fusion_customers
+from ..fusion import deai as fusion_deai
+from ..fusion import shots as fusion_shots
+from ..fusion import topics as fusion_topics
 from ..models import (AccountActionTask, AccountOperationLog, AccountStatSnapshot,
                       AccountWork, CommentTask, DouyinAccount, KeywordCollectionJob,
                       MonitorTarget, PublishTask, RiskEvent)
@@ -168,12 +172,75 @@ def get_metrics(args: MetricsArgs) -> dict:
                                 "未主动访问平台；数据新鲜度以各记录同步时间为准"]}
 
 
+# ── 融合层只读工具：选题、对标、镜头库、去 AI 味、客户 360 ──
+class TopicsArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    days: int = Field(default=1, ge=1, le=7)
+    limit: int = Field(default=8, ge=1, le=20)
+
+
+class BenchmarkArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    keyword: str = Field(default="", max_length=40)
+    limit: int = Field(default=10, ge=1, le=20)
+
+
+class ShotsArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    query: str = Field(default="", max_length=60)
+    category: str = Field(default="", max_length=30)
+    limit: int = Field(default=10, ge=1, le=30)
+
+
+class DeaiArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    text: str = Field(min_length=5, max_length=20000)
+
+
+class CustomersArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    platform: str = Field(default="", max_length=20)
+    query: str = Field(default="", max_length=40)
+    limit: int = Field(default=20, ge=1, le=50)
+
+
+def list_topics(args: TopicsArgs) -> dict:
+    return fusion_topics.list_topic_candidates(days=args.days, limit=args.limit)
+
+
+def get_benchmark(args: BenchmarkArgs) -> dict:
+    return fusion_topics.get_benchmark(keyword=args.keyword, limit=args.limit)
+
+
+def list_shots(args: ShotsArgs) -> dict:
+    return fusion_shots.list_shots(query=args.query, category=args.category, limit=args.limit)
+
+
+def critique_text(args: DeaiArgs) -> dict:
+    return fusion_deai.critique_text(args.text)
+
+
+def list_customers(args: CustomersArgs) -> dict:
+    return fusion_customers.list_customers(platform=args.platform, query=args.query,
+                                           limit=args.limit)
+
+
 READ_TOOLS = {
     "list_accounts": (ListArgs, list_accounts, "查询本地账号状态，不读取凭据或刷新平台。"),
     "list_tasks": (ListArgs, list_tasks, "查询最近的任务和监控状态；用于选择待诊断任务。"),
     "get_task": (TaskArgs, get_task, "读取指定任务证据、操作流水、账号风险事件和规则初步分类。"),
     "get_metrics": (MetricsArgs, get_metrics, "计算本地任务统计、已同步作品和账号快照，包含统计口径与数据缺口。"),
     "get_risk_events": (ListArgs, get_risk_events, "读取范围内账号的风险事件；不解除风险状态。"),
+    "list_topic_candidates": (TopicsArgs, list_topics,
+                              "查询今天拍什么：radar 提炼选题 + 热度榜 + 本地爆款作品，带来源与缺口说明。"),
+    "get_benchmark": (BenchmarkArgs, get_benchmark,
+                      "在已同步作品里按关键词找高互动样本，用作爆款对标。"),
+    "list_shot_recipes": (ShotsArgs, list_shots,
+                          "检索 124 张镜头配方卡（开场/字体/数据/镜头/交互），返回用途、时长与素材需求。"),
+    "critique_copy": (DeaiArgs, critique_text,
+                      "去 AI 味质检：定位 AI 腔、模板结构、模糊词、句长问题，给替换建议与分数。"),
+    "list_customers": (CustomersArgs, list_customers,
+                       "列出可跟进客户（私信会话 + 直播线索合并），按最近互动排序。"),
 }
 
 
@@ -187,13 +254,15 @@ def read_tool(name: str, arguments: dict, *, platform: str = "", account_id: int
         raise ValueError("未开放此工具")
     schema, handler, _ = READ_TOOLS[name]
     args = schema.model_validate(arguments)
-    if platform:
+    # 融合层工具不一定带 platform/account_id 维度，按实际字段收敛。
+    if platform and hasattr(args, "platform"):
         if args.platform and args.platform != platform:
             raise ValueError("工具平台超出本次选择范围")
         args.platform = platform
-    if account_id is not None:
+    if account_id is not None and hasattr(args, "account_id"):
         if args.account_id is not None and args.account_id != account_id:
             raise ValueError("工具账号超出本次选择范围")
         args.account_id = account_id
-    return {"scope": {"platform": args.platform, "account_id": args.account_id},
+    return {"scope": {"platform": getattr(args, "platform", platform),
+                      "account_id": getattr(args, "account_id", account_id)},
             "observed_at": iso(datetime.utcnow()), **handler(args)}

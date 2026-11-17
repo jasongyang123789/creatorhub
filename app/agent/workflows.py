@@ -23,20 +23,44 @@ from .privacy import redact
 
 class WorkflowStep(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
-    kind: Literal["create_collection", "create_monitor"]
-    platform: Literal["douyin", "xhs", "kuaishou", "tiktok"]
-    account_id: int = Field(gt=0)
+    kind: Literal["create_collection", "create_monitor", "render_cover", "render_packaging"]
+    platform: Literal["douyin", "xhs", "kuaishou", "tiktok", ""] = ""
+    account_id: int = Field(default=0, ge=0)
     keywords: list[str] = Field(default_factory=list, max_length=10)
     target: str = Field(default="", max_length=2000)
     monitor_kind: Literal["creator", "keyword"] = "creator"
     interval_seconds: int = Field(default=900, ge=60, le=86400)
     max_contents: int = Field(default=20, ge=1, le=100)
     download_media: bool = False
+    # ── 渲染步骤（不触达平台，只产出本地文件）──
+    title: str = Field(default="", max_length=60)
+    subtitle: str = Field(default="", max_length=120)
+    cover_style: Literal["hallmark", "nothing", "huashu"] = "hallmark"
+    size: Literal["1080x1440", "1080x1920", "1920x1080", "1080x1080"] = "1080x1440"
+    lines: list[str] = Field(default_factory=list, max_length=6)
+    packaging_style: Literal["kinetic", "data-card", "chapter"] = "kinetic"
+    duration: float = Field(default=3.0, ge=1, le=15)
+    aspect: Literal["9:16", "16:9", "1:1"] = "9:16"
 
     @model_validator(mode="after")
     def validate_target(self):
         self.keywords = list(dict.fromkeys(value.strip() for value in self.keywords if value.strip()))
         self.target = self.target.strip()
+        if self.kind in {"render_cover", "render_packaging"}:
+            if self.keywords or self.target:
+                raise ValueError("渲染步骤不接受采集关键词或监控目标")
+            if self.kind == "render_cover":
+                if not self.title.strip():
+                    raise ValueError("封面渲染需填写标题")
+            else:
+                self.lines = [line.strip() for line in self.lines if line.strip()]
+                if not self.lines:
+                    raise ValueError("包装渲染需填写 1–6 行文案")
+                if any(len(line) > 60 for line in self.lines):
+                    raise ValueError("每行文案最多 60 字")
+            return self
+        if not self.platform or not self.account_id:
+            raise ValueError("采集/监控步骤需填写平台与账号 ID")
         if self.kind == "create_collection":
             if not self.keywords or any(len(value) > 80 for value in self.keywords):
                 raise ValueError("采集需填写 1–10 个关键词，每项最多 80 字")
@@ -62,6 +86,12 @@ class WorkflowStep(BaseModel):
         return self
 
     def payload(self) -> dict:
+        if self.kind == "render_cover":
+            return {"title": self.title.strip(), "subtitle": self.subtitle.strip(),
+                    "style": self.cover_style, "size": self.size}
+        if self.kind == "render_packaging":
+            return {"lines": self.lines, "style": self.packaging_style,
+                    "duration": self.duration, "aspect": self.aspect}
         common = {"platform": self.platform, "account_id": self.account_id}
         if self.kind == "create_collection":
             return {**common, "keywords": self.keywords, "source_type": "keyword",
@@ -93,6 +123,8 @@ def validate_plan(arguments: dict, platform: str = "", account_id: int | None = 
     plan = WorkflowPlan.model_validate(arguments)
     with get_session() as s:
         for step in plan.steps:
+            if step.kind in {"render_cover", "render_packaging"}:
+                continue  # 渲染不触达平台，不需要账号
             if platform and step.platform != platform or account_id and step.account_id != account_id:
                 raise ValueError("计划超出本次选择的平台或账号范围")
             account = s.get(DouyinAccount, step.account_id)
@@ -121,7 +153,7 @@ def public_plan(row: AgentWorkflow) -> dict:
     return {"id": row.id, "run_id": row.run_id, "plan": json.loads(row.plan_json),
             "plan_hash": row.plan_hash, "status": row.status,
             "results": json.loads(row.results_json), "error": row.error,
-            "effect": "确认后创建采集/持续监控任务，由现有引擎执行；不发布、不发送消息。"}
+            "effect": "确认后创建采集/监控任务，或渲染封面/包装镜头到本地；不发布、不发送消息。"}
 
 
 async def apply_plan(plan_id: str, plan_hash: str, executors: dict) -> dict:
@@ -150,9 +182,12 @@ async def apply_plan(plan_id: str, plan_hash: str, executors: dict) -> dict:
             key = f"agent-{plan_id}-{index}"
             request = Request({"type": "http", "headers": [(b"idempotency-key", key.encode())]})
             payload = await asyncio.wait_for(executors[step.kind](step.payload(), request), timeout=60)
-            results.append({"step": index + 1, "kind": step.kind, "id": payload["id"],
-                            "platform": step.platform, "status": payload.get("status", "created"),
-                            "replayed": payload.get("replayed", False)})
+            item = {"step": index + 1, "kind": step.kind, "id": payload["id"],
+                    "platform": step.platform, "status": payload.get("status", "created"),
+                    "replayed": payload.get("replayed", False)}
+            if payload.get("path"):
+                item["path"] = payload["path"]
+            results.append(item)
             with get_session() as s:
                 row = s.get(AgentWorkflow, plan_id)
                 row.results_json = json.dumps(results, ensure_ascii=False)
@@ -183,6 +218,7 @@ async def apply_plan(plan_id: str, plan_hash: str, executors: dict) -> dict:
 
 
 PLAN_TOOL = {"name": "propose_workflow", "description": (
-    "仅生成待确认草稿，不执行。支持关键词采集和作品监控（抖音/小红书/快手/TikTok）。"
-    "先查询真实账号 ID；缺少目标先询问。日报定时发送、代码修改、发布等未支持需求须列入 unsupported。"
+    "仅生成待确认草稿，不执行。支持关键词采集、作品监控（抖音/小红书/快手/TikTok），"
+    "以及 render_cover（封面）与 render_packaging（片头/数据卡/章节卡）两种本地渲染。"
+    "采集/监控先查询真实账号 ID；缺少目标先询问。日报定时发送、代码修改、发布等未支持需求须列入 unsupported。"
     "每次只提交一个计划，最多五步。"), "inputSchema": WorkflowPlan.model_json_schema()}

@@ -14,7 +14,9 @@ from urllib.parse import urlsplit
 
 import httpx
 
-ALLOWED_TOOLS = frozenset({"list_accounts", "list_tasks", "get_task", "get_metrics", "get_risk_events"})
+ALLOWED_TOOLS = frozenset({"list_accounts", "list_tasks", "get_task", "get_metrics", "get_risk_events",
+                           "list_topic_candidates", "get_benchmark", "list_shot_recipes",
+                           "critique_copy", "list_customers"})
 
 
 def validate_base(value: str) -> str:

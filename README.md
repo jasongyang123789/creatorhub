@@ -135,6 +135,25 @@ chmod +x start.sh
   赞赏金额随心，感谢每一份支持！入群遇到问题，也可以添加作者微信联系。
 </p>
 
+## 内容生产融合层（可选）
+
+工作台不只管理已有内容，也能就地生产。`/api/fusion/*` 把外部已验证的能力接进来：
+
+| 能力 | 来源 | 端点 |
+|---|---|---|
+| 选题情报 / 爆款对标 | radar + 本地已同步作品 | `GET /api/fusion/topics`、`GET /api/fusion/benchmark` |
+| 文章素材提取 | 公开文章链接 | `POST /api/fusion/extract` |
+| 封面 / 图文卡片 | hallmark / nothing / huashu 三种版式 | `POST /api/fusion/cover` |
+| 视频包装镜头 | 片头 / 数据卡 / 章节卡 | `POST /api/fusion/packaging` |
+| 长文 → 讲解片 | 分镜 + 大字卡 + 可选 TTS | `POST /api/fusion/explainer` |
+| 批量混剪 | MoneyPrinterTurbo 本地素材管线 | `POST /api/fusion/short` |
+| 去 AI 味质检 | impeccable 规则 | `POST /api/fusion/deai` |
+| 镜头配方库 | video-shotcraft 124 卡 | `GET /api/fusion/shots` |
+| 客户 360 | 私信 + 直播线索 | `GET /api/fusion/customers` |
+
+外部依赖全部可缺失，缺什么只影响对应能力；`GET /api/fusion/status` 可自检。
+详细参数与示例见 [docs/fusion-api.md](docs/fusion-api.md)，融合决策见 [docs/外部项目拆解与融合路线.md](docs/外部项目拆解与融合路线.md)。
+
 ## 友链
 
 - [LINUX DO](https://linux.do/) — 感谢社区提供的帮助与支持。

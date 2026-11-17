@@ -1871,6 +1871,7 @@
     <div class="nav-sep">本账号</div>
     <button class="navitem" data-tab="hub" onclick="switchTab('hub', true)"><svg><use href="#i-library"/></svg><span class="nav-label">本账号管理</span></button>
     <div class="nav-sep">工具</div>
+    <button class="navitem" data-tab="fusion" onclick="switchTab('fusion', true)"><svg><use href="#i-film"/></svg><span class="nav-label">创作台</span></button>
     <button class="navitem" data-tab="queue" onclick="switchTab('queue', true)"><svg><use href="#i-list"/></svg><span class="nav-label">任务队列</span><span class="nav-badge" id="tb-queue">0</span></button>
     <button class="navitem tk-only" data-tab="tiktok-tools" onclick="switchTab('tiktok-tools', true)"><svg><use href="#i-user"/></svg><span class="nav-label">用户互动</span></button>
     <button class="navitem pub-only" data-tab="publish" onclick="switchTab('publish', true)"><svg><use href="#i-send"/></svg><span class="nav-label">发布</span><span class="nav-badge" id="tb-pub">0</span></button>
@@ -2591,6 +2592,11 @@
         </div>
       </div>
     </div>
+  </section>
+
+  <section data-panel="fusion">
+    <div class="hint" style="margin-bottom:10px">选题 → 封面 → 包装 → 讲解片 → 混剪，全部本地生成；产物在 storage/fusion/。首次生成封面需启动无头 Chrome，约 10–20 秒。</div>
+    <iframe id="fusion-frame" data-src="/api/fusion/ui?embed=1" title="创作台" style="width:100%;height:calc(100vh - 220px);min-height:620px;border:1px solid var(--line);border-radius:14px;background:#fff"></iframe>
   </section>
 
   <section data-panel="settings">

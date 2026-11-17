@@ -11850,9 +11850,33 @@ async def _agent_create_monitor(payload: dict, request: Request):
     return await add_monitor(TargetIn(**payload), request=request)
 
 
+async def _agent_render_cover(payload: dict, request: Request):
+    from .fusion import cover
+    result = await asyncio.to_thread(
+        cover.render_cover, payload["title"], payload.get("subtitle", ""),
+        payload.get("style", "hallmark"), payload.get("size", "1080x1440"))
+    return {"id": result["path"], "status": "created", "path": result["path"]}
+
+
+async def _agent_render_packaging(payload: dict, request: Request):
+    from .fusion import packaging
+    result = await asyncio.to_thread(
+        packaging.render_packaging, payload["lines"], payload.get("style", "kinetic"),
+        payload.get("duration", 3.0), payload.get("aspect", "9:16"))
+    return {"id": result["path"], "status": "created", "path": result["path"]}
+
+
 from .agent.api import create_router as create_agent_router
 
 app.include_router(create_agent_router({
     "create_collection": _agent_create_collection,
     "create_monitor": _agent_create_monitor,
+    "render_cover": _agent_render_cover,
+    "render_packaging": _agent_render_packaging,
 }))
+
+
+# 内容生产融合层：选题 / 提取 / 封面 / 包装 / 讲解片 / 混剪 / 去 AI 味 / 客户 360
+from .fusion.api import create_router as create_fusion_router
+
+app.include_router(create_fusion_router())

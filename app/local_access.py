@@ -72,8 +72,10 @@ class LocalAccessMiddleware:
         async def secure_send(message):
             if message["type"] == "http.response.start":
                 headers = list(message.get("headers", []))
+                # 创作台需要在同源工作台内以 iframe 嵌入；其余页面保持 DENY。
+                frame_policy = b"SAMEORIGIN" if path == "/api/fusion/ui" else b"DENY"
                 headers += [(b"x-content-type-options", b"nosniff"),
-                            (b"x-frame-options", b"DENY"),
+                            (b"x-frame-options", frame_policy),
                             (b"referrer-policy", b"no-referrer")]
                 if not path.startswith("/static/"):
                     headers = [(k, v) for k, v in headers if k.lower() != b"cache-control"]

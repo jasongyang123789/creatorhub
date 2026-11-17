@@ -1048,6 +1048,9 @@ const PAGE_META = {
   overview: {
     title: "工作概览", desc: "查看待处理任务，接着推进今天的内容工作。"
   },
+  fusion: {
+    title: "创作台", desc: "选题、封面、包装、讲解片、混剪与去 AI 味，全部在本地生成。"
+  },
   accounts: {
     title: "平台账号", desc: "查看登录状态；网络与环境配置按需展开。"
   },
@@ -1496,6 +1499,10 @@ function switchTab(name, pushHistory = false) {
   if (name === "share-download") {
     loadShareAccounts();
     refreshShareHistory();
+  }
+  if (name === "fusion") {
+    const frame = $("fusion-frame");
+    if (frame && !frame.getAttribute("src")) frame.src = frame.dataset.src;
   }
   if (name === "collections") { populateCollectionAccount(); refreshCollections(); }
   if (name === "tiktok-tools") populateTikTokAccounts();
