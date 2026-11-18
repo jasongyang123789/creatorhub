@@ -1,10 +1,11 @@
 """融合层离线回归：选题解析、去 AI 味、镜头库、封面/包装/讲解片/架构图/品牌包/预览真实渲染、
-日报聚合、OneID 客户归并、发布草稿与工作流校验。"""
+日报聚合、OneID 客户归并、发布草稿与工作流校验、技能包、爆文转贴图、Blender 3D 片头。"""
 from __future__ import annotations
 
 import asyncio
 import json
 import os
+import re
 import time
 from datetime import datetime
 from pathlib import Path
@@ -13,8 +14,9 @@ import pytest
 
 import app.db as db
 import app.main as main  # noqa: F401
-from app.fusion import (brandkit, cover, customers, daily, deai, diagram, explainer,
-                        extract, packaging, preview, publish, shots, topics)
+from app.fusion import (blender3d, brandkit, cover, customers, daily, deai, diagram,
+                        explainer, extract, packaging, preview, publish, shots,
+                        skillpack, tucard, topics)
 from app.models import (CommentRecord, DmConversation, DmMessage, DouyinAccount,
                         LiveLead, PublishTask)
 
@@ -332,3 +334,137 @@ def test_workflow_schedule_publish_validation():
         "kind": "schedule_publish", "platform": "douyin", "account_id": 1,
         "asset_path": "G:/x/demo.mp4"}]}).steps[0].payload()
     assert empty["scheduled_at"] is None and empty["title"] == ""
+
+
+# ── 技能包（anthropics-skills 19 技能，真实 G 盘目录）──
+
+def test_skillpack_list_and_get():
+    skills = skillpack.list_skills()
+    assert skills["total"] >= 1
+    names = {item["name"] for item in skills["items"]}
+    assert "docx" in names
+    first = skills["items"][0]
+    assert {"name", "description", "has_refs", "dir_kb"} <= set(first)
+    assert first["dir_kb"] >= 1
+    card = skillpack.get_skill("docx")
+    assert card["path"].endswith("SKILL.md")
+    assert card["content"].strip()
+    with pytest.raises(ValueError):
+        skillpack.get_skill("no-such-skill")
+    with pytest.raises(ValueError):  # 非法名字（防目录穿越）
+        skillpack.get_skill("../escape")
+
+
+def test_agent_load_skill_prompt_tool():
+    from app.agent.tools import READ_TOOLS, read_tool
+    assert "load_skill_prompt" in READ_TOOLS
+    result = read_tool("load_skill_prompt", {"name": "docx"})
+    assert "content" in result and result["name"] == "docx"
+    with pytest.raises(ValueError):
+        read_tool("load_skill_prompt", {"name": "no-such-skill"})
+
+
+# ── 包装 recipe（镜头卡 → 时长均值覆盖 + 不存在报 400 文案）──
+
+def test_packaging_recipe_endpoint_logic(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from app.fusion.api import create_router
+
+    calls = {}
+
+    def fake_render(lines, style, duration, aspect, fps, index):
+        calls["duration"] = duration
+        return {"path": "x.mp4", "frames": 1}
+
+    monkeypatch.setattr(packaging, "render_packaging", fake_render)
+
+    real_get_shot = shots.get_shot
+
+    def fake_get_shot(name):
+        # 假卡验证覆盖逻辑；其余名字回落真实镜头库（真实卡名也能走通）
+        if name == "已知卡":
+            return {"name": name, "duration": "4-8s", "summary": "开场大字砸标题"}
+        return real_get_shot(name)
+
+    monkeypatch.setattr(shots, "get_shot", fake_get_shot)
+    client = TestClient(FastAPI())
+    client.app.include_router(create_router())
+
+    result = client.post("/api/fusion/packaging",
+                         json={"lines": ["第一行"], "recipe": "已知卡"})
+    assert result.status_code == 200
+    body = result.json()
+    assert body["recipe"] == "已知卡"
+    assert body["recipe_note"] == "开场大字砸标题"
+    assert calls["duration"] == pytest.approx(6.0)  # "4-8s" 数字均值覆盖时长
+
+    missing = client.post("/api/fusion/packaging",
+                          json={"lines": ["第一行"], "recipe": "不存在的卡"})
+    assert missing.status_code == 400
+    assert "镜头卡不存在" in missing.json()["detail"]
+
+    # 真实镜头库：端点逻辑对真实卡名同样成立（时长均值 = duration 字段数字均值）
+    real = shots.list_shots(query="标题", limit=1)["items"][0]
+    numbers = [int(n) for n in re.findall(r"\d+", real.get("duration", ""))]
+    expected = sum(numbers) / len(numbers) if numbers else 3.0
+    ok = client.post("/api/fusion/packaging", json={"lines": ["第一行"], "recipe": real["name"]})
+    assert ok.status_code == 200
+    if numbers:
+        assert calls["duration"] == pytest.approx(expected)
+    assert ok.json()["recipe"] == real["name"]
+
+
+def test_packaging_hero_renders_mp4(tmp_path, monkeypatch):
+    monkeypatch.setattr(packaging, "FUSION_DIR", tmp_path)
+    result = packaging.render_packaging(["不要工资的员工", "一个月省 4 万"],
+                                        style="hero", duration=1.0, aspect="1:1", fps=30)
+    assert result["frames"] == 30
+    assert result["bytes"] > 3000
+
+
+# ── 爆文转贴图（真实渲染，产物落临时 FUSION_DIR）──
+
+@pytest.mark.skipif(cover.chrome_exe() is None, reason="需要 Chrome/Edge")
+def test_tucard_renders_cards(tmp_path, monkeypatch):
+    monkeypatch.setattr(tucard, "FUSION_DIR", tmp_path)
+    long_para = "这条报价单只写三行：设备、交期、售后。" * 10  # >120 字，验证截断
+    result = tucard.render_cards(
+        "一张报价单怎么谈",
+        ["华辰制造要 8 万的巡检设备，30 天交货，王工说周四给答复。", long_para],
+        style="huashu", size="1080x1080")
+    assert result["count"] == 3  # 封面卡 + 两张正文卡
+    assert all(path.endswith(".png") for path in result["cards"])
+    assert result["bytes"] > 9000
+    for path in result["cards"][1:]:
+        assert Path(path).is_file()
+    with pytest.raises(ValueError):  # 标题超 60 字
+        tucard.render_cards("标" * 61, ["第一段足够长的话"])
+    with pytest.raises(ValueError):  # 段落 <5 字
+        tucard.render_cards("标题", ["短"])
+    with pytest.raises(ValueError):  # 段落 >200 字
+        tucard.render_cards("标题", ["段" * 201])
+    with pytest.raises(ValueError):  # 段落 >10 段
+        tucard.render_cards("标题", ["第一段足够长的话"] * 11)
+    with pytest.raises(ValueError):  # 风格不支持
+        tucard.render_cards("标题", ["第一段足够长的话"], style="kinetic")
+
+
+# ── Blender 3D 片头（探测式：无 Blender 报错文案 + 脚本可编译）──
+
+def test_blender3d_missing_blender_message(monkeypatch):
+    monkeypatch.setattr(blender3d, "blender_exe", lambda: None)
+    with pytest.raises(RuntimeError) as exc:
+        blender3d.render_intro("不要工资的员工", seconds=1.0)
+    assert "Blender" in str(exc.value)
+    assert "无需改代码" in str(exc.value)
+
+
+def test_blender3d_script_template_compiles():
+    for aspect, size in (("9:16", (1080, 1920)), ("16:9", (1920, 1080))):
+        src = blender3d.build_blender_script("报价单", size[0], size[1], 24, 2.0)
+        compile(src, "intro.py", "exec")  # py_compile 同等校验
+        assert "报价单" in src and "TRACK_TO" in src and "EEVEE" in src
+    with pytest.raises(ValueError):  # 非法画幅在渲染前就被拦下
+        blender3d.render_intro("标题", aspect="1:1")
