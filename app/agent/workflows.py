@@ -25,7 +25,7 @@ class WorkflowStep(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     kind: Literal["create_collection", "create_monitor", "render_cover", "render_packaging",
                   "schedule_publish"]
-    platform: Literal["douyin", "xhs", "kuaishou", "tiktok", ""] = ""
+    platform: Literal["douyin", "xhs", "kuaishou", "shipinhao", "tiktok", ""] = ""
     account_id: int = Field(default=0, ge=0)
     keywords: list[str] = Field(default_factory=list, max_length=10)
     target: str = Field(default="", max_length=2000)
@@ -76,6 +76,8 @@ class WorkflowStep(BaseModel):
             return self
         if not self.platform or not self.account_id:
             raise ValueError("采集/监控/发布步骤需填写平台与账号 ID")
+        if self.platform == "shipinhao" and self.kind in {"create_collection", "create_monitor"}:
+            raise ValueError("视频号仅支持发布草稿，不支持采集/监控步骤")
         if self.kind == "schedule_publish":
             if not self.asset_path.strip():
                 raise ValueError("发布步骤需填写渲染产物路径（来自渲染步骤结果里的 path）")

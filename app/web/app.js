@@ -8756,3 +8756,12 @@ try {
     document.addEventListener("DOMContentLoaded", () => toggleExpertMode(true));
   }
 } catch (e) {}
+
+
+// ── 「创作台」入口徽标：随创作台里的 🏷 标记 开关联动 ──
+try {
+  const _mkBadge = document.getElementById("mk-fusion");
+  const _mkShow = on => { if (_mkBadge) { _mkBadge.hidden = !on; _mkBadge.style.display = on ? "inline-block" : "none"; } };
+  _mkShow(localStorage.getItem("fusion-mark") === "1" || new URLSearchParams(location.search).get("mark") === "1");
+  window.addEventListener("message", e => { if (e.data && e.data.type === "fusion-mark") _mkShow(e.data.on); });
+} catch (e) {}

@@ -45,6 +45,11 @@ textarea{min-height:88px;resize:vertical}
 .status span.no{background:#fdeaea;color:var(--bad)}
 .hide{display:none!important}
 pre{background:#0f1420;color:#cfe3ff;border-radius:10px;padding:12px;font-size:12px;overflow:auto;max-height:300px}
+.mk{display:inline-block;font-size:10px;line-height:1;padding:3px 7px;border-radius:999px;margin-left:6px;vertical-align:1px;font-weight:600}
+.mk-new{background:#fee2e2;color:#dc2626}
+.mk-old{background:#e0edff;color:#2462ea}
+.mk-me{background:#fff4e5;color:#b45309;cursor:pointer}
+.mark-on .pub-btn::after{content:" ·本轮新增";font-size:10px;font-weight:700;color:#dc2626}
 </style>
 </head>
 <body>
@@ -53,6 +58,7 @@ pre{background:#0f1420;color:#cfe3ff;border-radius:10px;padding:12px;font-size:1
   <div class="sub">选题 → 封面 → 包装 → 讲解片 → 混剪 · 全部本地生成</div>
   <div style="flex:1"></div>
   <div class="status" id="status"></div>
+  <span id="markToggle" class="mk mk-me" title="点我开/关「谁加的功能」底字标记">🏷 标记</span>
 </div>
 <div class="wrap">
   <div class="tabs" id="tabs">
@@ -276,6 +282,43 @@ $('tabs').onclick = e => {
   const btn = document.querySelector(`#tabs button[data-v="${wanted}"]`);
   if (btn) btn.click();
 })();
+
+// ── 临时标记：红「本轮新增」= 本次会话加的；蓝「上轮融合」= 上一批加的；主工作台原有功能不带标 ──
+const MARK_KEY = 'fusion-mark';
+const markOn = () => localStorage.getItem(MARK_KEY) === '1'
+  || new URLSearchParams(location.search).get('mark') === '1';
+const NEW_TABS = ['diagram', 'brandkit', 'preview', 'daily'];
+const OLD_TABS = ['topics', 'cover', 'packaging', 'explainer', 'short', 'deai', 'assets'];
+function buildMarks() {
+  document.querySelectorAll('#tabs button').forEach(b => {
+    if (b.querySelector('.mk:not(.mk-me)')) return;
+    if (NEW_TABS.includes(b.dataset.v)) b.insertAdjacentHTML('beforeend', '<span class="mk mk-new">本轮新增</span>');
+    else if (OLD_TABS.includes(b.dataset.v)) b.insertAdjacentHTML('beforeend', '<span class="mk mk-old">上轮融合</span>');
+  });
+  const g = document.querySelector('#c-style option[value="guizang"]');
+  if (g && !g.dataset.mk) { g.textContent = 'guizang 瑞士网格（本轮新增）'; g.dataset.mk = '1'; }
+  document.querySelectorAll('#a-kind option').forEach(o => {
+    if (['diagram', 'brandkit', 'preview'].includes(o.value) && !o.dataset.mk) {
+      o.textContent += '（本轮新增）'; o.dataset.mk = '1';
+    }
+  });
+}
+function applyMark() {
+  document.body.classList.toggle('mark-on', markOn());
+  if (markOn()) buildMarks();
+  const tog = document.getElementById('markToggle');
+  if (tog) tog.textContent = markOn() ? '🏷 标记·开' : '🏷 标记·关';
+}
+function toggleMark() {
+  localStorage.setItem(MARK_KEY, markOn() ? '0' : '1');
+  applyMark();
+  if (window.parent !== window) {
+    try { window.parent.postMessage({ type: 'fusion-mark', on: markOn() }, '*'); } catch (e) {}
+  }
+}
+const _tog = document.getElementById('markToggle');
+if (_tog) _tog.onclick = toggleMark;
+applyMark();
 
 // 选题
 $('t-go').onclick = async () => {
