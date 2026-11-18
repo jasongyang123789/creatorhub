@@ -269,6 +269,13 @@ $('tabs').onclick = e => {
   $('v-' + b.dataset.v).classList.remove('hide');
   if (b.dataset.v === 'assets') loadAssets();
 };
+// 直达链接：/api/fusion/ui?tab=diagram 自动切到对应页签
+(() => {
+  const wanted = new URLSearchParams(location.search).get('tab');
+  if (!wanted) return;
+  const btn = document.querySelector(`#tabs button[data-v="${wanted}"]`);
+  if (btn) btn.click();
+})();
 
 // 选题
 $('t-go').onclick = async () => {
