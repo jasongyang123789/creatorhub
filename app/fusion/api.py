@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import re
 from typing import Literal
 
 from pathlib import Path
@@ -14,8 +15,9 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 
-from . import (brandkit, cover, customers, daily, deai, diagram, explainer, extract,
-               mpt, packaging, preview, publish, shots, topics)
+from . import (blender3d, brandkit, cover, customers, daily, deai, diagram, explainer,
+               extract, mpt, packaging, preview, publish, shots, skillpack, tucard,
+               topics)
 from .paths import FUSION_DIR, MPT_DIR, RADAR_DIR, SHOT_LIBRARY, chrome_exe, ffmpeg_exe
 
 
@@ -39,11 +41,12 @@ class CoverIn(BaseModel):
 class PackagingIn(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     lines: list[str] = Field(min_length=1, max_length=6)
-    style: Literal["kinetic", "data-card", "chapter"] = "kinetic"
+    style: Literal["kinetic", "data-card", "chapter", "hero"] = "kinetic"
     duration: float = Field(default=3.0, ge=1, le=15)
     aspect: Literal["9:16", "16:9", "1:1"] = "9:16"
     fps: int = Field(default=30, ge=15, le=60)
     index: int = Field(default=1, ge=1, le=99)
+    recipe: str = Field(default="", max_length=80)
 
 
 class ExplainerIn(BaseModel):
@@ -107,6 +110,22 @@ class CustomersMergeIn(BaseModel):
     b: int = Field(ge=1)
 
 
+class TucardIn(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    title: str = Field(min_length=1, max_length=60)
+    paragraphs: list[str] = Field(min_length=1, max_length=10)
+    style: Literal["hallmark", "nothing", "huashu", "guizang"] = "huashu"
+    size: Literal["1080x1440", "1080x1920", "1920x1080", "1080x1080"] = "1080x1440"
+
+
+class Intro3dIn(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    title: str = Field(min_length=1, max_length=40)
+    seconds: float = Field(default=2.0, ge=1, le=5)
+    aspect: Literal["9:16", "16:9"] = "9:16"
+    fps: Literal[24, 30] = 24
+
+
 # 创作日报 Service Worker：缓存优先 + 后台更新（同源 GET）。
 SW_SOURCE = """// CreatorHub 创作日报 Service Worker：缓存优先，后台静默更新
 const CACHE = "daily-cache-v1";
@@ -160,8 +179,23 @@ def create_router() -> APIRouter:
 
     @router.post("/packaging")
     def post_packaging(body: PackagingIn):
-        return packaging.render_packaging(body.lines, body.style, body.duration,
-                                          body.aspect, body.fps, body.index)
+        duration = body.duration
+        recipe = body.recipe.strip()
+        recipe_note = ""
+        if recipe:
+            try:
+                card = shots.get_shot(recipe)
+            except ValueError:
+                raise HTTPException(400, f"镜头卡不存在：{recipe}（先到镜头库检索）")
+            numbers = re.findall(r"\d+", card.get("duration", ""))
+            if numbers:
+                duration = sum(int(n) for n in numbers) / len(numbers)
+            recipe_note = (card.get("summary") or "")[:80]
+        result = packaging.render_packaging(body.lines, body.style, duration,
+                                            body.aspect, body.fps, body.index)
+        result["recipe"] = recipe
+        result["recipe_note"] = recipe_note
+        return result
 
     @router.post("/explainer")
     def post_explainer(body: ExplainerIn):
@@ -251,6 +285,32 @@ def create_router() -> APIRouter:
     def post_customers_merge(body: CustomersMergeIn):
         return customers.merge_customers(body.a, body.b)
 
+    @router.post("/tucard")
+    def post_tucard(body: TucardIn):
+        try:
+            return tucard.render_cards(body.title, body.paragraphs, body.style, body.size)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+
+    @router.post("/intro3d")
+    def post_intro3d(body: Intro3dIn):
+        # Blender 缺失报 RuntimeError，与参数错误一样回 400，前端直接显示提示文案
+        try:
+            return blender3d.render_intro(body.title, body.seconds, body.aspect, body.fps)
+        except (RuntimeError, ValueError) as exc:
+            raise HTTPException(400, str(exc))
+
+    @router.get("/skills")
+    def get_skills():
+        return skillpack.list_skills()
+
+    @router.get("/skills/{name}")
+    def get_skill(name: str):
+        try:
+            return skillpack.get_skill(name)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+
     @router.get("/customers/{customer_id}")
     def get_customer(customer_id: str):
         # 路径段是 str；函数内部兼容整数、整数字符串与 "platform:uid" 三种形态
@@ -266,14 +326,17 @@ def create_router() -> APIRouter:
             "ffmpeg": True,
             "moneyprinterturbo": (MPT_DIR / "cli.py").is_file() and (MPT_DIR / ".deps").is_dir(),
             "smyw": preview.smyw_available(),
+            "skills": skillpack.SKILLS_DIR.is_dir(),
+            "blender": blender3d.blender_exe() is not None,
         }
         try:
             checks["ffmpeg"] = bool(ffmpeg_exe())
         except RuntimeError:
             checks["ffmpeg"] = False
         return {"checks": checks, "fusion_dir": str(FUSION_DIR),
-                "note": "radar 缺失只影响选题；chrome 缺失只影响封面/架构图/品牌包；"
-                        "MPT 缺失只影响混剪；smyw 缺失只影响变更预览。"}
+                "note": "radar 缺失只影响选题；chrome 缺失只影响封面/架构图/品牌包/贴图卡；"
+                        "MPT 缺失只影响混剪；smyw 缺失只影响变更预览；"
+                        "skills 目录缺失只影响技能包；Blender 缺失只影响 3D 片头。"}
 
     @router.get("/ui")
     def get_ui():
@@ -296,13 +359,13 @@ def create_router() -> APIRouter:
     @router.get("/assets")
     def get_assets(kind: str = Query(default="", max_length=20),
                    limit: int = Query(default=50, ge=1, le=200)):
-        """列出融合层已生成的产物（封面/包装/讲解片/混剪/提取/架构图/品牌包/预览）。"""
+        """列出融合层已生成的产物（封面/包装/讲解片/混剪/提取/架构图/品牌包/预览/贴图卡）。"""
         folders = {"cover": "covers", "packaging": "packaging", "explainer": "explainer",
                    "short": "shorts", "extract": "extract", "diagram": "diagrams",
-                   "brandkit": "brandkits", "preview": "preview"}
+                   "brandkit": "brandkits", "preview": "preview", "tucard": "tucards"}
         if kind and kind not in folders:
             raise ValueError("kind 只支持 cover/packaging/explainer/short/extract/"
-                             "diagram/brandkit/preview")
+                             "diagram/brandkit/preview/tucard")
         items = []
         for key, name in folders.items():
             if kind and key != kind:

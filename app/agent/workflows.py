@@ -39,7 +39,7 @@ class WorkflowStep(BaseModel):
     cover_style: Literal["hallmark", "nothing", "huashu", "guizang"] = "hallmark"
     size: Literal["1080x1440", "1080x1920", "1920x1080", "1080x1080"] = "1080x1440"
     lines: list[str] = Field(default_factory=list, max_length=6)
-    packaging_style: Literal["kinetic", "data-card", "chapter"] = "kinetic"
+    packaging_style: Literal["kinetic", "data-card", "chapter", "hero"] = "kinetic"
     duration: float = Field(default=3.0, ge=1, le=15)
     aspect: Literal["9:16", "16:9", "1:1"] = "9:16"
     recipe: str = Field(default="", max_length=80)  # 包装套用的镜头卡名（list_shot_recipes 检索）

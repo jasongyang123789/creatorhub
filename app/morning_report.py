@@ -17,7 +17,14 @@ from datetime import date, datetime, timedelta
 from sqlmodel import select
 
 from .db import get_session
-from .models import AccountStatSnapshot, AccountWork, DouyinAccount
+from .models import AccountStatSnapshot, AccountWork, DouyinAccount, PublishTask
+
+# 融合层：AI-Content-Team 项目根目录（环境变量可覆盖，与 fusion/paths.py 同风格）
+import json
+import os
+CONTENT_TEAM_DIR = os.environ.get(
+    "CREATORHUB_CONTENT_TEAM_DIR", r"G:/AI-Content-Team")
+
 
 PLATFORM_LABEL = {"douyin": "抖音", "xhs": "小红书", "kuaishou": "快手",
                   "shipinhao": "视频号", "tiktok": "TikTok"}
@@ -153,6 +160,55 @@ def build_report(days: int = 1, today: date | None = None) -> dict:
     if not advice:
         advice.append("一切正常,今天也保持节奏 👍")
 
+    # ── 5. 融合区块：今天拍什么(fusion 选题) / 待发队列 / 复盘要点 ──
+    topics_block = {"items": [], "gaps": ["选题引擎未启用"]}
+    try:
+        from .fusion import topics as fusion_topics
+        tc = fusion_topics.list_topic_candidates(days=1, limit=3)
+        topics_block = {"items": tc.get("candidates", [])[:3],
+                        "gaps": tc.get("gaps", [])}
+    except Exception:
+        pass  # 选题引擎异常不阻塞晨报
+    queue = {"draft": 0, "queued": 0}
+    try:
+        from sqlmodel import select as _sel
+        with get_session() as session:
+            rows = session.exec(select(PublishTask)).all()
+        queue["draft"] = sum(1 for r in rows if (r.status or "") == "draft")
+        queue["queued"] = sum(1 for r in rows if (r.status or "") in
+                              ("pending", "publishing", "uncertain"))
+    except Exception:
+        pass
+    retro = {"count_7d": 0, "best": None}
+    try:
+        posts_path = os.path.join(CONTENT_TEAM_DIR, "data", "published", "posts.jsonl")
+        posts = []
+        if os.path.exists(posts_path):
+            with open(posts_path, "r", encoding="utf-8") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if line:
+                        try:
+                            posts.append(json.loads(line))
+                        except Exception:
+                            continue
+        cutoff = (datetime.utcnow() - timedelta(days=7))
+        recent = [p for p in posts
+                  if _parse_ts(p.get("postedAt")) and _parse_ts(p.get("postedAt")) >= cutoff]
+        retro["count_7d"] = len(recent)
+        def _eng(p):
+            hist = p.get("statsHistory") or []
+            s = hist[-1] if hist else {}
+            return (s.get("views") or 0)
+        if recent:
+            best = max(recent, key=_eng)
+            hist = best.get("statsHistory") or []
+            s = (hist[-1] if hist else {})
+            retro["best"] = {"hook": (best.get("hook") or "")[:30],
+                             "views": s.get("views") or 0}
+    except Exception:
+        pass
+
     return {
         "date": today.isoformat(),
         "days": days,
@@ -172,6 +228,9 @@ def build_report(days: int = 1, today: date | None = None) -> dict:
         "fans_lines": fan_lines,
         "top": top_line,
         "advice": advice,
+        "topics": topics_block,
+        "queue": queue,
+        "retro": retro,
     }
 
 
@@ -196,6 +255,32 @@ def render_markdown(report: dict) -> str:
             f"{top['desc']}",
             f"  👍 {top['like']} · 💬 {top['comment']} · 🔁 {top['share']} · ⭐ {top['collect']}",
         ]
+    # -- 合一区块:今天拍什么 / 待发队列 / 复盘要点 --
+    tblock = report.get("topics") or {}
+    if tblock.get("items"):
+        lines += ["", "**今天拍什么(选题雷达)**:"]
+        for item in tblock["items"]:
+            angle = (item.get("angle") or item.get("why") or "")
+            lines.append("- " + (item.get("title") or "")
+                         + (("（" + angle[:28] + "）") if angle else ""))
+    elif tblock.get("gaps"):
+        lines += ["", "**今天拍什么**:选题引擎暂无输出(radar 未跑或未同步)"]
+    q = report.get("queue") or {}
+    if q.get("draft") or q.get("queued"):
+        lines.append("")
+        lines.append("**待发队列**:草稿 " + str(q.get("draft", 0))
+                     + " 个,排队中 " + str(q.get("queued", 0))
+                     + " 个(到发布页确认后自动按节奏发)")
+    r = report.get("retro") or {}
+    if r.get("count_7d"):
+        best_txt = ""
+        if r.get("best"):
+            b = r["best"]
+            best_txt = ",最好的一条《" + (b.get("hook") or "") + "》" + str(b.get("views") or 0) + " 播放"
+        lines.append("")
+        lines.append("**复盘要点**:近 7 天发布 " + str(r.get("count_7d"))
+                     + " 条" + best_txt + "(数据来自内容回流桥)")
+
     lines += ["", "**今天建议**:"]
     lines += [f"- {a}" for a in report["advice"]]
     lines += ["", "---", "*由你的 AI 新媒体员工自动生成*"]

@@ -12,6 +12,7 @@ from ..db import get_session
 from ..fusion import customers as fusion_customers
 from ..fusion import deai as fusion_deai
 from ..fusion import shots as fusion_shots
+from ..fusion import skillpack as fusion_skillpack
 from ..fusion import topics as fusion_topics
 from ..models import (AccountActionTask, AccountOperationLog, AccountStatSnapshot,
                       AccountWork, CommentTask, DouyinAccount, KeywordCollectionJob,
@@ -204,6 +205,11 @@ class CustomersArgs(BaseModel):
     limit: int = Field(default=20, ge=1, le=50)
 
 
+class SkillPromptArgs(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    name: str = Field(min_length=1, max_length=60)
+
+
 def list_topics(args: TopicsArgs) -> dict:
     return fusion_topics.list_topic_candidates(days=args.days, limit=args.limit)
 
@@ -225,6 +231,10 @@ def list_customers(args: CustomersArgs) -> dict:
                                            limit=args.limit)
 
 
+def load_skill_prompt(args: SkillPromptArgs) -> dict:
+    return fusion_skillpack.get_skill(args.name)
+
+
 READ_TOOLS = {
     "list_accounts": (ListArgs, list_accounts, "查询本地账号状态，不读取凭据或刷新平台。"),
     "list_tasks": (ListArgs, list_tasks, "查询最近的任务和监控状态；用于选择待诊断任务。"),
@@ -241,6 +251,9 @@ READ_TOOLS = {
                       "去 AI 味质检：定位 AI 腔、模板结构、模糊词、句长问题，给替换建议与分数。"),
     "list_customers": (CustomersArgs, list_customers,
                        "列出可跟进客户（私信会话 + 直播线索合并），按最近互动排序。"),
+    "load_skill_prompt": (SkillPromptArgs, load_skill_prompt,
+                          "按需加载 anthropics-skills 文档技能的完整提示词"
+                          "（docx/pptx/pdf/xlsx/canvas-design 等 19 个）。"),
 }
 
 

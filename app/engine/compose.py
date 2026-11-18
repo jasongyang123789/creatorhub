@@ -77,13 +77,34 @@ _DEFAULT_AI_PROMPT = (
 )
 
 
+def _content_team_llm_config() -> tuple[str, str, str] | tuple[(),]:
+    """AI-Content-Team llm.json 兜底（自动评论 AI 配置不全时）。返回 (base, key, model) 或空。"""
+    import json as _json
+    import os as _os
+    root = _os.environ.get("CREATORHUB_CONTENT_TEAM_DIR", r"G:/AI-Content-Team")
+    path = _os.path.join(root, "config", "llm.json")
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            cfg = _json.load(fh)
+    except Exception:
+        return ()
+    if cfg.get("endpoint") and cfg.get("apiKey") and cfg.get("model"):
+        return (cfg["endpoint"].rstrip("/"), cfg["apiKey"], cfg["model"])
+    return ()
+
+
 async def generate(ctx: dict, ai: dict) -> str:
-    """调用大模型 API 生成一条文案。ai 配置不全或请求失败时抛错(引擎会回退模板)。
+    """调用大模型 API 生成一条文案。ai 配置不全时兜底读 AI-Content-Team llm.json；
+    请求失败时抛错(引擎会回退模板)。
     ai: {base_url, api_key, model, prompt, temperature, timeout}"""
     import httpx
     base = (ai.get("base_url") or "").rstrip("/")
     key = ai.get("api_key") or ""
     model = ai.get("model") or ""
+    if not (base and key and model):
+        _fb = _content_team_llm_config()
+        if _fb:
+            base, key, model = _fb
     if not (base and key and model):
         raise RuntimeError("AI 配置不完整(需 base_url / api_key / model)")
     vals = {

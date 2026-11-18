@@ -16,7 +16,7 @@ import httpx
 
 ALLOWED_TOOLS = frozenset({"list_accounts", "list_tasks", "get_task", "get_metrics", "get_risk_events",
                            "list_topic_candidates", "get_benchmark", "list_shot_recipes",
-                           "critique_copy", "list_customers"})
+                           "critique_copy", "list_customers", "load_skill_prompt"})
 
 
 def validate_base(value: str) -> str:
