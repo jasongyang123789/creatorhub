@@ -362,10 +362,9 @@ def create_router() -> APIRouter:
         """列出融合层已生成的产物（封面/包装/讲解片/混剪/提取/架构图/品牌包/预览/贴图卡）。"""
         folders = {"cover": "covers", "packaging": "packaging", "explainer": "explainer",
                    "short": "shorts", "extract": "extract", "diagram": "diagrams",
-                   "brandkit": "brandkits", "preview": "preview", "tucard": "tucards"}
+                   "brandkit": "brandkits", "preview": "preview", "tucard": "tucards", "intro3d": "intros"}
         if kind and kind not in folders:
-            raise ValueError("kind 只支持 cover/packaging/explainer/short/extract/"
-                             "diagram/brandkit/preview/tucard")
+            raise HTTPException(422, "不支持该资产类型")
         items = []
         for key, name in folders.items():
             if kind and key != kind:

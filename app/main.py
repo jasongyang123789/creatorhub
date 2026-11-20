@@ -11878,6 +11878,15 @@ async def _agent_render_packaging(payload: dict, request: Request):
     return {"id": result["path"], "status": "created", "path": result["path"], **extra}
 
 
+async def _agent_render_3d_intro(payload: dict, request: Request):
+    from .fusion import blender3d
+    try:
+        result = await asyncio.to_thread(blender3d.render_intro, **payload)
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"id": result["path"], "status": "created", "path": result["path"]}
+
+
 async def _agent_schedule_publish(payload: dict, request: Request):
     from .fusion import publish
     result = await asyncio.to_thread(
@@ -11894,6 +11903,7 @@ app.include_router(create_agent_router({
     "create_monitor": _agent_create_monitor,
     "render_cover": _agent_render_cover,
     "render_packaging": _agent_render_packaging,
+    "render_3d_intro": _agent_render_3d_intro,
     "schedule_publish": _agent_schedule_publish,
 }))
 
@@ -11902,3 +11912,6 @@ app.include_router(create_agent_router({
 from .fusion.api import create_router as create_fusion_router
 
 app.include_router(create_fusion_router())
+
+from .fusion.crm_api import create_router as create_crm_router
+app.include_router(create_crm_router())

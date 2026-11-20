@@ -48,7 +48,8 @@ function WorkflowCard({ workflow, busy, onApply }) {
     {!!workflow.plan.notes?.length && <ul>{workflow.plan.notes.map((note, index) => <li key={index}>{note}</li>)}</ul>}
     {!!workflow.plan.unsupported?.length && <div className="agent-notice agent-notice-warn"><b>以下需求尚未包含在计划中</b><ul>{workflow.plan.unsupported.map((note, index) => <li key={index}>{note}</li>)}</ul></div>}
     {!!workflow.results?.length && <div className="agent-notice agent-notice-ok"><b>已创建的任务（后续执行状态以业务页面为准）</b><ul>{workflow.results.map(item => <li key={item.step}>
-      步骤 {item.step} · {item.kind === "create_monitor" ? "监控" : "采集"} #{item.id}{item.replayed ? " · 已复用原提交" : ""}
+      步骤 {item.step} · {({ create_monitor: "监控", create_collection: "采集", render_cover: "封面", render_packaging: "包装",
+        render_3d_intro: "3D 片头", schedule_publish: "发布草稿" }[item.kind] || item.kind)} #{item.id}{item.path ? "" : ""}{item.replayed ? " · 已复用原提交" : ""}
     </li>)}</ul></div>}
     {workflow.error && <p className="agent-error" role="alert">{workflow.error}</p>}
     {workflow.status !== "applied" && <>

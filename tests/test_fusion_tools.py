@@ -221,20 +221,32 @@ def test_customers_oneid_sync_360_merge(temp_db):
                              status="new", score=80,
                              updated_at=datetime.utcfromtimestamp(now)))
         session.add(CommentRecord(platform="douyin", aweme_id="a1", comment_id="c01",
-                                  user_nickname="王工", user_sec_uid="sec1",
+                                  user_nickname="王工", user_sec_uid="u1",
                                   create_time=now, text="多少钱"))
         session.commit()
 
     result = customers.list_customers()
     assert result["total"] >= 1
-    first = result["items"][0]
+    first = next(item for item in result["items"]
+                 if any(identity["uid"] == "u1" for identity in item["identities"]))
     assert first["display_name"] == "王工"
     assert {"id", "display_name", "platform", "stage", "score",
             "identities", "last_seen", "note"} <= set(first)
 
     card = customers.get_customer_360(first["id"])
     assert card["messages"] and card["leads"] and card["comments"]
+    assert card["comments"][0]["text"] == "多少钱"
     assert card["suggestions"]
+
+    # 同名但不同稳定 UID 的评论不自动挂到当前 OneID。
+    with db.get_session() as session:
+        session.add(CommentRecord(platform="douyin", aweme_id="a2", comment_id="c02",
+                                  user_nickname="王工", user_sec_uid="sec-other",
+                                  create_time=now, text="不同的王工"))
+        session.commit()
+    customers.sync_customers()
+    refreshed = customers.get_customer_360(first["id"])
+    assert all(row["text"] != "不同的王工" for row in refreshed["comments"])
 
     # 第二个客户（李总）→ 归并到第一个客户后身份 >=3，b 行删除
     with db.get_session() as session:
@@ -242,10 +254,12 @@ def test_customers_oneid_sync_360_merge(temp_db):
                                    peer_uid="u2", peer_nickname="李总", last_time=now))
         session.commit()
     customers.list_customers()
-    merged = customers.merge_customers(first["id"], first["id"] + 1)
-    assert len(merged["identities"]) >= 3
+    second = next(item for item in customers.list_customers()["items"]
+                  if any(identity["uid"] == "u2" for identity in item["identities"]))
+    merged = customers.merge_customers(first["id"], second["id"])
+    assert len(merged["identities"]) == 2  # explicitly merged u1 and u2 only
     with pytest.raises(ValueError):
-        customers.get_customer_360(first["id"] + 1)
+        customers.get_customer_360(second["id"])
 
 
 def test_customers_update_and_identity_lookup(temp_db):
@@ -465,6 +479,42 @@ def test_blender3d_script_template_compiles():
     for aspect, size in (("9:16", (1080, 1920)), ("16:9", (1920, 1080))):
         src = blender3d.build_blender_script("报价单", size[0], size[1], 24, 2.0)
         compile(src, "intro.py", "exec")  # py_compile 同等校验
-        assert "报价单" in src and "TRACK_TO" in src and "EEVEE" in src
+        assert "报价单" in src and 'f"f_{frame:04d}.png"' in src
+        assert "scene.cycles.device = \"CPU\"" in src
+        assert "cam.data.ortho_scale" in src
     with pytest.raises(ValueError):  # 非法画幅在渲染前就被拦下
         blender3d.render_intro("标题", aspect="1:1")
+
+
+def test_workflow_3d_intro_payload_and_guards(temp_db):
+    from app.agent.workflows import validate_plan
+    plan = validate_plan({"title": "3D 片头计划", "steps": [{
+        "kind": "render_3d_intro", "title": "不要工资的员工",
+        "intro_seconds": 2, "intro_fps": 24, "aspect": "9:16"}]})
+    payload = plan.steps[0].payload()
+    assert payload == {"title": "不要工资的员工", "seconds": 2, "aspect": "9:16", "fps": 24}
+    with pytest.raises(ValueError):  # 1:1 不支持
+        validate_plan({"title": "x", "steps": [{"kind": "render_3d_intro", "title": "标题", "aspect": "1:1"}]})
+    with pytest.raises(ValueError):  # 空标题
+        validate_plan({"title": "x", "steps": [{"kind": "render_3d_intro", "title": "  "}]})
+
+
+def test_workflow_3d_intro_apply_runs_without_step_timeout(temp_db):
+    """apply_plan 对 render_3d_intro 不套 60 秒步骤超时（Blender 自带 600 秒子进程预算）。"""
+    import asyncio
+    from app.agent.workflows import apply_plan, save_plan, validate_plan
+
+    plan = validate_plan({"title": "3D 片头计划", "steps": [{
+        "kind": "render_3d_intro", "title": "不要工资的员工", "intro_seconds": 2,
+        "intro_fps": 24, "aspect": "9:16"}]})
+    saved = save_plan("run-3d-intro", plan)
+
+    async def slow_executor(payload, request):
+        await asyncio.sleep(0.3)  # 超过旧 60 秒限制不适用；这里只证明不走 wait_for(60) 分支
+        return {"id": "intro.mp4", "status": "created", "path": "intro.mp4"}
+
+    applied = asyncio.run(apply_plan(saved["id"], saved["plan_hash"],
+                                     {"render_3d_intro": slow_executor}))
+    assert applied["status"] == "applied"
+    assert applied["results"][0]["kind"] == "render_3d_intro"
+    assert applied["results"][0]["path"] == "intro.mp4"

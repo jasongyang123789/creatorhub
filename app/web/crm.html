@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>本地客户工作台 · CreatorHub</title>
+  <link rel="stylesheet" href="/crm/crm.css">
+  <script src="/crm/crm.js" defer></script>
+</head>
+<body>
+  <header class="masthead">
+    <div><a class="back" href="/static/fusion.html">返回创意工作台</a><h1>本地客户工作台 <span class="badge">LOCAL CRM</span></h1><p>统一收件箱 · SOP 待办 · 成交账本与 RFM</p></div>
+    <span class="local-pill">仅本地数据 · 不执行平台操作</span>
+  </header>
+  <main>
+    <div class="notice">回复只保存到独立本地草稿，不发送、不加入发送队列。SOP 只创建人工待办。成交只按明确确认的客户 ID 入账，不通过昵称识别客户。</div>
+    <div id="status" role="status" aria-live="polite" tabindex="-1"></div>
+    <nav class="tabs" aria-label="客户工作区">
+      <button type="button" data-tab="inbox" aria-current="page">统一收件箱</button>
+      <button type="button" data-tab="tasks">SOP / 到期待办</button>
+      <button type="button" data-tab="ledger">成交账本 / RFM</button>
+    </nav>
+
+    <section id="view-inbox" class="workspace">
+      <div class="section-head"><div><h2>统一收件箱</h2><p>读取已同步的本地私信；每条回复固定到平台、账号和会话。</p></div><button id="inbox-refresh" type="button">刷新本地会话</button></div>
+      <div class="filters"><label>账号<select id="inbox-account"><option value="">全部本地账号</option></select></label><label>搜索会话<input id="inbox-query" type="search" placeholder="对方昵称或 UID"></label><button id="inbox-search" type="button">筛选</button></div>
+      <div class="inbox-grid">
+        <aside class="panel" aria-label="本地会话列表"><div id="inbox-list" class="conversation-list"></div><div class="pager"><button id="inbox-prev" type="button">上一页</button><span id="inbox-count"></span><button id="inbox-next" type="button">下一页</button></div></aside>
+        <section class="panel conversation-panel" aria-label="会话和回复草稿">
+          <h3 id="conversation-title">请选择左侧会话</h3><p id="conversation-scope" class="muted">会话未选择</p>
+          <div id="messages" class="messages"><p class="empty">选择会话后查看本地消息。</p></div>
+          <button id="messages-more" class="hidden" type="button">加载更早消息</button>
+          <form id="draft-form">
+            <label for="draft-text">本地回复草稿</label><textarea id="draft-text" maxlength="4000" rows="4" required disabled placeholder="内容只在本机保存，不会发往平台"></textarea>
+            <div class="actions"><button id="draft-save" type="submit" disabled>保存本地回复草稿</button><button id="draft-new" class="secondary" type="button" disabled>新建另一条</button><span id="draft-edit-label" class="muted"></span></div>
+          </form>
+          <h3>本会话草稿 <span class="muted">已核阅也不会发送</span></h3><div id="draft-list" class="stack"></div>
+        </section>
+      </div>
+    </section>
+
+    <section id="view-tasks" class="workspace hidden">
+      <div class="section-head"><div><h2>SOP / 到期待办</h2><p>到期任务持久保存；完成、取消或延期不会触发消息。</p></div><button id="tasks-refresh" type="button">刷新待办</button></div>
+      <div class="filters"><label>任务范围<select id="task-filter"><option value="due">当前到期</option><option value="all">全部任务</option><option value="pending">待处理</option><option value="in_progress">进行中</option><option value="done">已完成</option><option value="cancelled">已取消</option></select></label><label class="check"><input id="tasks-customer-only" type="checkbox">仅选中客户</label></div>
+      <div id="task-list" class="stack"></div><div class="pager"><button id="tasks-prev" type="button">上一页</button><span id="task-count"></span><button id="tasks-next" type="button">下一页</button></div>
+      <div class="two-col">
+        <form id="task-form" class="panel"><h3>添加人工待办</h3><p class="selected-customer">请在下方选择客户 ID</p><label>任务标题<input id="task-title" maxlength="200" required></label><label>到期时间（本地时区）<input id="task-due" type="datetime-local" required></label><label>备注<textarea id="task-note" maxlength="2000" rows="2"></textarea></label><button type="submit">保存本地待办</button></form>
+        <form id="sop-form" class="panel"><h3>创建 SOP 模板</h3><label>模板名称<input id="sop-name" maxlength="200" required></label><p class="muted">每行：延迟小时 | 任务标题。模板内容保存后不变，避免已登记任务漂移。</p><label>步骤<textarea id="sop-steps" rows="4" required placeholder="0 | 核实需求&#10;24 | 准备回访材料&#10;72 | 人工复核下一步"></textarea></label><button type="submit">保存 SOP 模板</button></form>
+      </div>
+      <section class="panel"><h3>登记 SOP 为本地任务</h3><form id="enroll-form"><p class="selected-customer">请在下方选择客户 ID</p><div class="filters"><label>模板<select id="enroll-sop" required></select></label><label>起始时间（本地时区）<input id="enroll-start" type="datetime-local" required></label><button type="submit">创建本轮待办</button></div></form><div id="sop-list" class="stack"></div></section>
+    </section>
+
+    <section id="view-ledger" class="workspace hidden">
+      <div class="section-head"><div><h2>成交账本 / RFM</h2><p>CNY 整数分；只统计人工确认且未作废的已付款成交，不用线索分数代替消费。</p></div><button id="ledger-refresh" type="button">刷新账本与 RFM</button></div>
+      <div class="two-col">
+        <form id="sale-form" class="panel"><h3>手工登记已付款成交</h3><p class="selected-customer">请在下方选择客户 ID</p><label>唯一成交单号<input id="sale-reference" maxlength="120" required placeholder="订单号或唯一手工记账单号"></label><label>实付金额（CNY 分，整数）<input id="sale-cents" type="number" min="1" max="1000000000000" step="1" required placeholder="12345 表示 ¥123.45"></label><label>成交时间（本地时区）<input id="sale-time" type="datetime-local" required></label><label>备注<textarea id="sale-note" rows="2" maxlength="2000"></textarea></label><label>再次输入客户 ID 确认归属<input id="sale-confirm-id" type="number" min="1" step="1" required autocomplete="off"></label><label class="check"><input id="sale-confirm" type="checkbox" required>我已核实客户 ID 和身份，确认这是真实已付款成交</label><button type="submit">确认入账</button></form>
+        <section class="panel"><h3>CSV 成交导入</h3><p>先预览并逐一核实客户 ID，再确认入账。上限 500 行 / 1 MB；每笔均需唯一成交单号。</p><p class="muted">必需列：customer_id,reference,amount_cents,occurred_at,currency<br>可选列：note。时间需带时区；currency 必须为 CNY。不接受昵称列或小数元。</p><label>选择本地 CSV 文件<input id="csv-file" type="file" accept=".csv,text/csv"></label><label>或粘贴 CSV<textarea id="csv-text" rows="5" maxlength="1000000" placeholder="customer_id,reference,amount_cents,occurred_at,currency&#10;123,order-001,12345,2026-11-18T08:00:00Z,CNY"></textarea></label><button id="csv-preview" type="button">预览（不写成交账本）</button><div id="csv-result"></div><form id="csv-confirm-form" class="hidden"><label>输入预览中全部客户 ID，用英文逗号分隔<input id="csv-confirm-ids" required autocomplete="off" placeholder="例如 1,2"></label><label class="check"><input id="csv-confirm" type="checkbox" required>我已逐一核实下列客户 ID 和平台身份，确认入账</label><button type="submit">确认整批入账</button></form></section>
+      </div>
+      <section class="panel"><h3>成交记录（选中客户）</h3><p class="selected-customer">请在下方选择客户 ID</p><div id="transaction-list" class="table-wrap"></div><div class="pager"><button id="transactions-prev" type="button">上一页</button><span id="transaction-count"></span><button id="transactions-next" type="button">下一页</button></div></section>
+      <section class="panel"><div class="section-head"><h3>RFM 分层</h3><label>统计窗口<select id="rfm-window"><option value="365">最近 365 天</option><option value="90">最近 90 天</option><option value="30">最近 30 天</option></select></label></div><p class="muted">R：距最近成交的整天数（保留窗口前最近成交）；F：窗口内成交笔数；M：窗口内实付整数分合计。无消费客户为 0 分，不从“已成交”阶段猜测。</p><details><summary>评分口径</summary><p>R：≤30/60/90/180 天为 5/4/3/2 分，其余 1 分。F：1/2/3/5/10 笔为 1/2/3/4/5 分。M：正数/¥100/¥1,000/¥5,000/¥10,000 为 1/2/3/4/5 分。分层：无购买、休眠（R&gt;180 天）、有流失风险（R≤2 分）、高价值（R/F/M 均≥4 分）、忠诚（F≥3 分）、近期、待培育。</p></details><div id="rfm-list" class="table-wrap"></div><div class="pager"><button id="rfm-prev" type="button">上一页</button><span id="rfm-count"></span><button id="rfm-next" type="button">下一页</button></div></section>
+    </section>
+
+    <section class="panel customer-picker" aria-labelledby="customer-heading"><div class="section-head"><div><h2 id="customer-heading">客户 ID 选择与核实</h2><p>客户选择用于人工待办和成交归属；不会自动将私信对方绑定到同名客户。</p></div><button id="customers-refresh" type="button">刷新客户</button></div><div class="notice warning">历史 OneID 可能曾按昵称归并。本页不拆分、不重写旧身份；入账前请人工核实客户 ID 及平台 UID。</div><div id="selected-customer" class="selection">尚未选择客户</div><div class="filters"><label>查找客户 ID / 名称<input id="customer-query" type="search" placeholder="名称仅用于搜索，不用于身份匹配"></label><button id="customer-search" type="button">搜索</button></div><div id="customer-list" class="customer-grid"></div><div class="pager"><button id="customers-prev" type="button">上一页</button><span id="customer-count"></span><button id="customers-next" type="button">下一页</button></div><details><summary>没有合适的主档？新建独立手工客户</summary><form id="customer-form" class="filters"><label>客户显示名<input id="customer-name" maxlength="200" required></label><label>核实备注<input id="customer-note" maxlength="2000" placeholder="如合同主体、线下档案编号"></label><button type="submit">新建客户 ID</button></form><p class="muted">不会按名称合并，也不会自动认领任何平台身份。</p></details></section>
+  </main>
+</body>
+</html>

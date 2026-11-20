@@ -3,8 +3,8 @@
 对齐 HiveMtk 的客户数据层（OneID / 客户 360 / 线索 / 跟进）：
 - 只读扫描本地三个数据源：私信会话（DmConversation）、直播线索（LiveLead）、
   评论（CommentRecord，sec_uid 非空时）
-- 身份写进 FusionCustomerIdentity，(platform, uid) 唯一；新身份优先挂到
-  同平台同昵称的已有主档，否则新建 FusionCustomer
+- 身份写进 FusionCustomerIdentity，按 (platform, uid) 精确归属；新身份新建主档，
+  不再按昵称归并。历史主档保持原样，成交需人工核实客户 ID
 - 每次同步后按身份聚合回写主档（昵称 / 最近活跃 / 阶段 / 分数）；
   merge / update 提供人工纠偏
 """
@@ -73,7 +73,7 @@ def _scan_events(session) -> list[dict]:
 
 def _customer_leads(session, customer: FusionCustomer,
                     identities: list[FusionCustomerIdentity]) -> list[LiveLead]:
-    """该客户的全部线索：身份 uid 精确匹配（user_id 或 lead:{id}）+ 同平台同昵称兜底。"""
+    """该客户的全部线索：只按平台与身份 uid 精确匹配，不以昵称推断身份。"""
     leads: dict[int, LiveLead] = {}
     for identity in identities:
         conds = [LiveLead.user_id == identity.uid]
@@ -81,12 +81,6 @@ def _customer_leads(session, customer: FusionCustomer,
             conds.append(LiveLead.id == int(identity.uid[5:]))
         for row in session.exec(select(LiveLead).where(
                 LiveLead.platform == identity.platform, or_(*conds))).all():
-            leads[row.id] = row
-    name = (customer.display_name or "").strip()
-    if name:
-        for row in session.exec(select(LiveLead).where(
-                LiveLead.platform == customer.platform,
-                LiveLead.nickname == name)).all():
             leads[row.id] = row
     return list(leads.values())
 
@@ -118,18 +112,12 @@ def sync_customers() -> dict:
                 FusionCustomerIdentity.platform == event["platform"],
                 FusionCustomerIdentity.uid == event["uid"])).first()
             if identity is None:
-                # 新身份优先挂到同平台同昵称的已有主档（OneID 归并）
-                customer = None
-                if event["name"]:
-                    customer = session.exec(select(FusionCustomer).where(
-                        FusionCustomer.platform == event["platform"],
-                        FusionCustomer.display_name == event["name"])).first()
-                if customer is None:
-                    customer = FusionCustomer(display_name=event["name"],
-                                              platform=event["platform"], stage="new",
-                                              first_seen=datetime.utcnow())
-                    session.add(customer)
-                    session.flush()
+                # 只按稳定平台身份复用；昵称不是身份，不自动合并历史主档。
+                customer = FusionCustomer(display_name=event["name"],
+                                          platform=event["platform"], stage="new",
+                                          first_seen=datetime.utcnow())
+                session.add(customer)
+                session.flush()
                 identity = FusionCustomerIdentity(
                     customer_id=customer.id, platform=event["platform"], uid=event["uid"],
                     source=event["source"], display_name=event["name"],
@@ -204,7 +192,7 @@ def list_customers(platform: str = "", query: str = "", limit: int = 20) -> dict
                 "note": customer.note,
             })
     return {"total": len(items), "items": items[:limit],
-            "note": "私信/线索/评论按 (platform, uid) 归并身份，同昵称兜底；详情见客户 360。"}
+            "note": "私信/线索/评论按 (platform, uid) 归并身份，不按昵称匹配；历史 OneID 请人工核实，详情见客户 360。"}
 
 
 def get_customer_360(customer_id: int | str) -> dict:
@@ -249,16 +237,14 @@ def get_customer_360(customer_id: int | str) -> dict:
         messages = [item for _, item in sorted(stamped, key=lambda pair: pair[0],
                                                reverse=True)[:30]]
 
-        # 线索：身份 uid 精确匹配 + 同昵称兜底
+        # 线索：只按稳定平台身份精确匹配
         leads = _customer_leads(session, customer, identities)
 
-        # 评论：同平台，sec_uid 命中任一身份 uid 或昵称等于主档昵称，最近 20 条
+        # 评论：同平台且 sec_uid 命中身份 uid，最近 20 条；不按昵称推断
         comment_conds = []
         uid_set = {row.uid for row in identities}
         if uid_set:
             comment_conds.append(CommentRecord.user_sec_uid.in_(uid_set))
-        if (customer.display_name or "").strip():
-            comment_conds.append(CommentRecord.user_nickname == customer.display_name)
         comment_rows = []
         if comment_conds:
             comment_rows = session.exec(select(CommentRecord).where(
@@ -278,7 +264,7 @@ def get_customer_360(customer_id: int | str) -> dict:
             "suggestions": _suggest(messages, leads),
             "identities": [{"platform": row.platform, "uid": row.uid, "source": row.source,
                             "display_name": row.display_name} for row in identities],
-            "note": "OneID 主档聚合：私信/线索/评论按身份与同昵称归并；未同步的数据不在此列。",
+            "note": "OneID 主档聚合：只按平台身份精确匹配，不按昵称归并；历史主档保持原样，请人工核实客户 ID。",
         }
 
 
@@ -292,6 +278,12 @@ def merge_customers(a_id: int | str, b_id: int | str) -> dict:
         slave = session.get(FusionCustomer, b_key)
         if master is None or slave is None:
             raise ValueError("没有找到这个客户")
+        # Legacy merge deletes the source. Never orphan or silently reattribute
+        # confirmed sales / durable follow-ups; resolving these needs a separate
+        # explicit transfer flow, not an automatic historical migration.
+        from .crm import customer_has_crm_state
+        if customer_has_crm_state(session, a_key) or customer_has_crm_state(session, b_key):
+            raise ValueError("客户已有 CRM 成交或跟进任务，禁止直接归并；请保留客户 ID 并人工核对")
         for identity in session.exec(select(FusionCustomerIdentity).where(
                 FusionCustomerIdentity.customer_id == slave.id)).all():
             identity.customer_id = master.id
