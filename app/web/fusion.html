@@ -49,7 +49,14 @@ pre{background:#0f1420;color:#cfe3ff;border-radius:10px;padding:12px;font-size:1
 .mk-new{background:#fee2e2;color:#dc2626}
 .mk-old{background:#e0edff;color:#2462ea}
 .mk-me{background:#fff4e5;color:#b45309;cursor:pointer}
-.mark-on .pub-btn::after{content:" ·本轮新增";font-size:10px;font-weight:700;color:#dc2626}
+.mark-on .pub-btn::after,.mark-on #iv2-heading::after{content:" ·本轮新增";font-size:10px;font-weight:700;color:#dc2626}
+.intro-config{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 10px}
+.intro-config .full{grid-column:1/-1}
+.intro-actions{margin-top:12px}
+#iv2-preview video{width:100%;max-width:240px;max-height:60vh;background:#111}
+.legacy-intro{grid-column:1/-1}
+.legacy-intro summary{cursor:pointer;color:var(--dim);font-weight:600}
+@media(max-width:480px){.intro-config{grid-template-columns:minmax(0,1fr)}}
 </style>
 </head>
 <body>
@@ -120,6 +127,24 @@ pre{background:#0f1420;color:#cfe3ff;border-radius:10px;padding:12px;font-size:1
   </div>
 
   <div id="v-packaging" class="grid hide">
+    <form class="panel" id="iv2-form" aria-labelledby="iv2-heading">
+      <h2 id="iv2-heading">有声片头 v2</h2>
+      <div class="hint" id="iv2-format">有声 2.5D · 固定 9:16 竖屏 · 1080 × 1920 · 6 秒 · 30 fps</div>
+      <div class="intro-config">
+        <div class="full"><label for="iv2-title">标题（最多 16 字）</label><input id="iv2-title" name="title" value="创作工作台" maxlength="16" required></div>
+        <div><label for="iv2-hook">开场短句（最多 12 字）</label><input id="iv2-hook" name="hook" value="把想法" maxlength="12" required></div>
+        <div><label for="iv2-message">主文案（最多 12 字）</label><input id="iv2-message" name="message" value="做成内容" maxlength="12" required></div>
+        <div><label for="iv2-tagline">标语（最多 24 字）</label><input id="iv2-tagline" name="tagline" value="让每个想法落地" maxlength="24" required></div>
+        <div><label for="iv2-brand">品牌（最多 24 字）</label><input id="iv2-brand" name="brand" value="CREATORHUB" maxlength="24" required></div>
+      </div>
+      <button class="btn intro-actions" id="iv2-go" type="submit" aria-describedby="iv2-format">生成有声片头 v2</button>
+    </form>
+    <div class="panel">
+      <h2>有声片头预览</h2>
+      <div id="iv2-status" class="out" role="status">还没有生成</div>
+      <div id="iv2-preview" class="out hide"></div>
+      <button class="btn ghost intro-actions hide" id="iv2-assets" type="button">打开资产</button>
+    </div>
     <div class="panel">
       <h2>包装镜头</h2>
       <label>文案（每行一条，最多 6 行）</label>
@@ -134,8 +159,8 @@ pre{background:#0f1420;color:#cfe3ff;border-radius:10px;padding:12px;font-size:1
       <button class="btn" id="p-go" style="margin-top:12px">渲染镜头</button>
     </div>
     <div class="panel"><h2>预览</h2><div id="p-out" class="out"><div class="empty">还没有生成</div></div></div>
-    <div class="panel" style="grid-column:1/-1">
-      <h2>3D 片头</h2>
+    <details class="panel legacy-intro">
+      <summary>旧版 Blender 3D 片头</summary>
       <div class="row">
         <div><label>标题</label><input id="in-title" value="不要工资的员工"></div>
         <div><label>秒数</label><input id="in-sec" type="number" value="2" min="1" max="5"></div>
@@ -144,7 +169,7 @@ pre{background:#0f1420;color:#cfe3ff;border-radius:10px;padding:12px;font-size:1
       <button class="btn" id="in-go" style="margin-top:12px">渲染 3D 片头</button>
       <div class="hint">使用本地 Blender。渲染完成后可在「资产 → 3D 片头」查看。</div>
       <div id="in-out" class="out"><div class="empty">还没有生成</div></div>
-    </div>
+    </details>
   </div>
 
   <div id="v-explainer" class="grid hide">
@@ -283,7 +308,7 @@ G:/VerifiedRepos/agent-skills/MoneyPrinterTurbo/storage/local_videos/mpt_test_2.
   <div id="v-assets" class="panel hide">
     <h2>已生成资产</h2>
     <div class="row" style="max-width:420px">
-      <div><label>类型</label><select id="a-kind"><option value="">全部</option><option value="cover">封面</option><option value="packaging">包装</option><option value="explainer">讲解片</option><option value="short">混剪</option><option value="diagram">架构图</option><option value="brandkit">品牌包</option><option value="preview">预览</option><option value="tucard">贴图卡</option><option value="intro3d">3D 片头</option><option value="extract">提取</option></select></div>
+      <div><label>类型</label><select id="a-kind"><option value="">全部</option><option value="cover">封面</option><option value="packaging">包装</option><option value="explainer">讲解片</option><option value="short">混剪</option><option value="diagram">架构图</option><option value="brandkit">品牌包</option><option value="preview">预览</option><option value="tucard">贴图卡</option><option value="intro_v2">有声片头 v2</option><option value="intro3d">3D 片头</option><option value="extract">提取</option></select></div>
       <div style="display:flex;align-items:flex-end"><button class="btn" id="a-go" style="width:100%">刷新</button></div>
     </div>
     <div id="a-out" class="out"><div class="empty">点刷新</div></div>
@@ -294,9 +319,17 @@ G:/VerifiedRepos/agent-skills/MoneyPrinterTurbo/storage/local_videos/mpt_test_2.
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 async function api(path, opt = {}) {
-  const res = await fetch('/api/fusion' + path, {headers: {'Content-Type': 'application/json'}, ...opt});
+  const res = await fetch('/api/fusion' + path, {...opt, headers: {'Content-Type': 'application/json', ...opt.headers}});
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.detail || data.error || ('HTTP ' + res.status));
+  if (!res.ok) {
+    const detail = Array.isArray(data.detail) ? data.detail.map(item => {
+      const field = (item.loc || []).filter(part => part !== 'body').join('.');
+      return (field ? `${field}：` : '') + (item.msg || '参数无效');
+    }).join('；') : data.detail;
+    const error = new Error(detail || data.error || ('HTTP ' + res.status));
+    error.status = res.status;
+    throw error;
+  }
   return data;
 }
 function err(el, e) { el.innerHTML = '<div class="issue high">' + esc(e.message || e) + '</div>'; }
@@ -346,7 +379,7 @@ function buildMarks() {
   const g = document.querySelector('#c-style option[value="guizang"]');
   if (g && !g.dataset.mk) { g.textContent = 'guizang 瑞士网格（本轮新增）'; g.dataset.mk = '1'; }
   document.querySelectorAll('#a-kind option').forEach(o => {
-    if (['diagram', 'brandkit', 'preview'].includes(o.value) && !o.dataset.mk) {
+    if (['diagram', 'brandkit', 'preview', 'intro_v2'].includes(o.value) && !o.dataset.mk) {
       o.textContent += '（本轮新增）'; o.dataset.mk = '1';
     }
   });
@@ -408,7 +441,46 @@ $('tc-go').onclick = async () => {
   } catch (e) { err(out, e); }
 };
 
-// 3D 片头
+// 有声片头 v2
+let introV2Attempt;
+$('iv2-form').onsubmit = async event => {
+  event.preventDefault();
+  const button = $('iv2-go'), status = $('iv2-status'), preview = $('iv2-preview');
+  if (button.disabled) return;
+  button.disabled = true;
+  status.textContent = '正在生成有声片头，请稍候…';
+  preview.classList.add('hide');
+  preview.replaceChildren();
+  $('iv2-assets').classList.add('hide');
+  try {
+    const body = JSON.stringify(Object.fromEntries(new FormData(event.currentTarget)));
+    if (introV2Attempt?.body !== body) {
+      const key = Array.from(crypto.getRandomValues(new Uint8Array(16)), n => n.toString(16).padStart(2, '0')).join('');
+      introV2Attempt = {body, key};
+    }
+    const d = await api('/intro-v2', {method: 'POST', body, headers: {'Idempotency-Key': introV2Attempt.key}});
+    introV2Attempt = undefined;
+    const video = document.createElement('video');
+    video.controls = true;
+    video.playsInline = true;
+    video.preload = 'metadata';
+    video.setAttribute('aria-label', '有声片头 v2 预览');
+    video.src = `/api/fusion/file?path=${encodeURIComponent(d.path)}`;
+    preview.append(video);
+    preview.classList.remove('hide');
+    $('iv2-assets').classList.remove('hide');
+    status.textContent = `${d.replayed ? '已复用' : '已生成'} · ${d.duration} 秒 · ${d.fps} fps · ${d.audio ? '有声' : '无声'}`;
+  } catch (e) {
+    if ([409, 410, 422].includes(e.status)) introV2Attempt = undefined;
+    err(status, e);
+  } finally { button.disabled = false; }
+};
+$('iv2-assets').onclick = () => {
+  $('a-kind').value = 'intro_v2';
+  document.querySelector('#tabs button[data-v="assets"]').click();
+};
+
+// 旧版 Blender 3D 片头
 $('in-go').onclick = async () => {
   const out = $('in-out');
   $('in-go').disabled = true;
@@ -609,7 +681,7 @@ fetch('/api/accounts/workbench').then(r => r.json()).then(list => {
 }).catch(() => {});
 
 // 资产
-const MEDIA_KIND = {cover: 'images', brandkit: 'images', tucard: 'images', packaging: 'video', explainer: 'video', short: 'video', intro3d: 'video'};
+const MEDIA_KIND = {cover: 'images', brandkit: 'images', tucard: 'images', packaging: 'video', explainer: 'video', short: 'video', intro3d: 'video', intro_v2: 'video'};
 function mediaTypeOf(x) {
   const kind = MEDIA_KIND[x.kind];
   if (!kind) return null;
@@ -627,7 +699,7 @@ async function loadAssets() {
       const media = mediaTypeOf(x);
       return `<div class="card">
       <div class="t">${esc(x.name)}</div>
-      <div class="m"><span class="tag">${esc(x.kind)}</span>${(x.bytes/1024).toFixed(0)} KB ·
+      <div class="m"><span class="tag">${esc(x.kind === 'intro_v2' ? '有声片头 v2' : x.kind)}</span>${(x.bytes/1024).toFixed(0)} KB ·
         <a href="/api/fusion/file?path=${encodeURIComponent(x.path)}" target="_blank">打开</a>
         ${media ? ' · <button class="btn ghost pub-btn" style="padding:3px 12px;font-size:12px" data-path="' + esc(x.path) + '">发布</button>' : ''}</div>
       ${media ? `<div class="pub-form hide" style="margin-top:10px;border-top:1px dashed var(--line);padding-top:10px">

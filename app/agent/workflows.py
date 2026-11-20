@@ -21,10 +21,13 @@ from ..models import AgentWorkflow, DouyinAccount
 from .privacy import redact
 
 
+LOCAL_RENDER_KINDS = {"render_cover", "render_packaging", "render_3d_intro", "render_intro_v2"}
+
+
 class WorkflowStep(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     kind: Literal["create_collection", "create_monitor", "render_cover", "render_packaging",
-                  "render_3d_intro", "schedule_publish"]
+                  "render_3d_intro", "render_intro_v2", "schedule_publish"]
     platform: Literal["douyin", "xhs", "kuaishou", "shipinhao", "tiktok", ""] = ""
     account_id: int = Field(default=0, ge=0)
     keywords: list[str] = Field(default_factory=list, max_length=10)
@@ -45,6 +48,10 @@ class WorkflowStep(BaseModel):
     recipe: str = Field(default="", max_length=80)  # 包装套用的镜头卡名（list_shot_recipes 检索）
     intro_seconds: float = Field(default=2.0, ge=1, le=5)
     intro_fps: Literal[24, 30] = 24
+    intro_hook: str = Field(default="把想法", min_length=1, max_length=12)
+    intro_message: str = Field(default="做成内容", min_length=1, max_length=12)
+    intro_tagline: str = Field(default="让每个想法落地", min_length=1, max_length=24)
+    intro_brand: str = Field(default="CREATORHUB", min_length=1, max_length=24)
     # ── 发布草稿步骤（创建 draft 任务，仍需发布页二次确认）──
     asset_path: str = Field(default="", max_length=500)
     publish_title: str = Field(default="", max_length=60)
@@ -56,10 +63,19 @@ class WorkflowStep(BaseModel):
     def validate_target(self):
         self.keywords = list(dict.fromkeys(value.strip() for value in self.keywords if value.strip()))
         self.target = self.target.strip()
-        if self.kind in {"render_cover", "render_packaging", "render_3d_intro"}:
+        if self.kind in LOCAL_RENDER_KINDS:
             if self.keywords or self.target:
                 raise ValueError("渲染步骤不接受采集关键词或监控目标")
-            if self.kind == "render_3d_intro":
+            if self.kind == "render_intro_v2":
+                from ..fusion.api import IntroV2In
+
+                text = IntroV2In(**self.payload())
+                self.title = text.title
+                self.intro_hook = text.hook
+                self.intro_message = text.message
+                self.intro_tagline = text.tagline
+                self.intro_brand = text.brand
+            elif self.kind == "render_3d_intro":
                 title = self.title.strip()
                 if not 1 <= len(title) <= 40 or any(ord(char) < 32 for char in title):
                     raise ValueError("3D 片头标题需为 1–40 个字的单行文字")
@@ -120,6 +136,9 @@ class WorkflowStep(BaseModel):
         return self
 
     def payload(self) -> dict:
+        if self.kind == "render_intro_v2":
+            return {"title": self.title, "hook": self.intro_hook, "message": self.intro_message,
+                    "tagline": self.intro_tagline, "brand": self.intro_brand}
         if self.kind == "render_3d_intro":
             return {"title": self.title.strip(), "seconds": self.intro_seconds,
                     "aspect": self.aspect, "fps": self.intro_fps}
@@ -166,7 +185,7 @@ def validate_plan(arguments: dict, platform: str = "", account_id: int | None = 
     plan = WorkflowPlan.model_validate(arguments)
     with get_session() as s:
         for step in plan.steps:
-            if step.kind in {"render_cover", "render_packaging", "render_3d_intro"}:
+            if step.kind in LOCAL_RENDER_KINDS:
                 continue  # 渲染不触达平台，不需要账号
             if platform and step.platform != platform or account_id and step.account_id != account_id:
                 raise ValueError("计划超出本次选择的平台或账号范围")
@@ -196,7 +215,7 @@ def public_plan(row: AgentWorkflow) -> dict:
     return {"id": row.id, "run_id": row.run_id, "plan": json.loads(row.plan_json),
             "plan_hash": row.plan_hash, "status": row.status,
             "results": json.loads(row.results_json), "error": row.error,
-            "effect": "确认后创建采集/监控任务，渲染封面/包装镜头/3D 片头到本地，"
+            "effect": "确认后创建采集/监控任务，渲染封面/包装镜头/有声片头 v2/3D 片头到本地，"
                       "或把渲染产物创建为发布草稿；不自动发布、不发送消息。"}
 
 
@@ -226,8 +245,8 @@ async def apply_plan(plan_id: str, plan_hash: str, executors: dict) -> dict:
             key = f"agent-{plan_id}-{index}"
             request = Request({"type": "http", "headers": [(b"idempotency-key", key.encode())]})
             execution = executors[step.kind](step.payload(), request)
-            # Blender and FFmpeg each enforce their own subprocess deadlines.
-            if step.kind == "render_3d_intro":
+            # The long renderers enforce their own subprocess deadlines.
+            if step.kind in {"render_3d_intro", "render_intro_v2"}:
                 payload = await execution
             else:
                 payload = await asyncio.wait_for(execution, timeout=60)
@@ -236,6 +255,8 @@ async def apply_plan(plan_id: str, plan_hash: str, executors: dict) -> dict:
                     "replayed": payload.get("replayed", False)}
             if payload.get("path"):
                 item["path"] = payload["path"]
+            if step.kind == "render_intro_v2":
+                item.update({key: payload[key] for key in ("audio", "style") if key in payload})
             results.append(item)
             with get_session() as s:
                 row = s.get(AgentWorkflow, plan_id)
@@ -270,7 +291,9 @@ PLAN_TOOL = {"name": "propose_workflow", "description": (
     "仅生成待确认草稿，不执行。支持关键词采集、作品监控（抖音/小红书/快手/TikTok），"
     "render_cover（封面，可用 guizang 瑞士网格风格）与 render_packaging（片头/数据卡/章节卡，"
     "可带 recipe：先用 list_shot_recipes 检索镜头卡，再把卡名填入），"
-    "render_3d_intro（Blender 本地 3D 片头，填写 title、intro_seconds、aspect、intro_fps），"
+    "render_intro_v2（有声 2.5D 片头，固定 9:16、6 秒、30 fps；填写 title、intro_hook、"
+    "intro_message、intro_tagline、intro_brand，分别不超过 16/12/12/24/24 字；无需账号），"
+    "render_3d_intro（旧版 Blender 本地 3D 片头，填写 title、intro_seconds、aspect、intro_fps），"
     "以及 schedule_publish（把渲染产物路径创建为发布草稿任务，仍需发布页二次确认；需要 account_id）。"
     "采集/监控先查询真实账号 ID；缺少目标先询问。日报定时发送、代码修改、直接发布等未支持需求须列入 unsupported。"
     "每次只提交一个计划，最多五步。"), "inputSchema": WorkflowPlan.model_json_schema()}

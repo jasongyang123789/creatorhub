@@ -11887,6 +11887,18 @@ async def _agent_render_3d_intro(payload: dict, request: Request):
     return {"id": result["path"], "status": "created", "path": result["path"]}
 
 
+async def _agent_render_intro_v2(payload: dict, request: Request):
+    from .fusion.intro_v2 import render_intro_v2
+
+    try:
+        result = await asyncio.to_thread(
+            render_intro_v2, **payload, request_key=request.headers.get("Idempotency-Key", ""))
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return {"id": result["path"], "path": result["path"], "status": "created",
+            **{key: result[key] for key in ("audio", "style", "replayed") if key in result}}
+
+
 async def _agent_schedule_publish(payload: dict, request: Request):
     from .fusion import publish
     result = await asyncio.to_thread(
@@ -11904,6 +11916,7 @@ app.include_router(create_agent_router({
     "render_cover": _agent_render_cover,
     "render_packaging": _agent_render_packaging,
     "render_3d_intro": _agent_render_3d_intro,
+    "render_intro_v2": _agent_render_intro_v2,
     "schedule_publish": _agent_schedule_publish,
 }))
 

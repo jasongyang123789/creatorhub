@@ -15,7 +15,8 @@ from .paths import FUSION_DIR
 
 FOLDERS = {"cover": "covers", "packaging": "packaging", "explainer": "explainer",
            "short": "shorts", "extract": "extract", "diagram": "diagrams",
-           "brandkit": "brandkits", "preview": "preview", "tucard": "tucards", "intro3d": "intros"}
+           "brandkit": "brandkits", "preview": "preview", "tucard": "tucards",
+           "intro3d": "intros", "intro_v2": "intro-v2"}
 
 
 def _day_bounds(date: str) -> tuple[datetime, datetime]:

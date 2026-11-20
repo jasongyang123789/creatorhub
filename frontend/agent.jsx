@@ -38,18 +38,32 @@ function WorkflowCard({ workflow, busy, onApply }) {
     <div className="agent-section-head"><h3>{workflow.plan.title}</h3><span className="agent-status-pill">{statusText[workflow.status] || workflow.status}</span></div>
     <p>{workflow.effect}</p>
     <ol className="agent-plan-steps">{workflow.plan.steps.map((step, index) => <li key={index}>
-      <b>{step.kind === "create_collection" ? "创建关键词采集" : "创建持续作品监控"}</b>
-      <dl><dt>执行账号</dt><dd>{platformText[step.platform]} · 账号 #{step.account_id}</dd>
-        <dt>{step.kind === "create_collection" ? "关键词" : "目标"}</dt><dd>{step.kind === "create_collection" ? step.keywords.join("、") : step.target}</dd>
-        {step.kind === "create_monitor" && <><dt>检查间隔</dt><dd>{step.interval_seconds} 秒 · 首次不回填历史</dd></>}
-        <dt>作品上限</dt><dd>{step.max_contents} 条 / {step.kind === "create_collection" ? "关键词" : "轮"}</dd>
-        <dt>下载媒体</dt><dd>{step.download_media ? "是" : "否，仅记录数据"}</dd></dl>
+      {step.kind === "render_intro_v2" ? <>
+        <b>生成有声片头 v2</b>
+        <dl><dt>标题</dt><dd>{step.title}</dd>
+          <dt>开场短句</dt><dd>{step.intro_hook}</dd>
+          <dt>主文案</dt><dd>{step.intro_message}</dd>
+          <dt>标语</dt><dd>{step.intro_tagline}</dd>
+          <dt>品牌</dt><dd>{step.intro_brand}</dd>
+          <dt>规格</dt><dd>9:16 竖屏 · 6 秒 · 30 fps · 有声</dd></dl>
+      </> : <>
+        <b>{step.kind === "create_collection" ? "创建关键词采集" : "创建持续作品监控"}</b>
+        <dl><dt>执行账号</dt><dd>{platformText[step.platform]} · 账号 #{step.account_id}</dd>
+          <dt>{step.kind === "create_collection" ? "关键词" : "目标"}</dt><dd>{step.kind === "create_collection" ? step.keywords.join("、") : step.target}</dd>
+          {step.kind === "create_monitor" && <><dt>检查间隔</dt><dd>{step.interval_seconds} 秒 · 首次不回填历史</dd></>}
+          <dt>作品上限</dt><dd>{step.max_contents} 条 / {step.kind === "create_collection" ? "关键词" : "轮"}</dd>
+          <dt>下载媒体</dt><dd>{step.download_media ? "是" : "否，仅记录数据"}</dd></dl>
+      </>}
     </li>)}</ol>
     {!!workflow.plan.notes?.length && <ul>{workflow.plan.notes.map((note, index) => <li key={index}>{note}</li>)}</ul>}
     {!!workflow.plan.unsupported?.length && <div className="agent-notice agent-notice-warn"><b>以下需求尚未包含在计划中</b><ul>{workflow.plan.unsupported.map((note, index) => <li key={index}>{note}</li>)}</ul></div>}
-    {!!workflow.results?.length && <div className="agent-notice agent-notice-ok"><b>已创建的任务（后续执行状态以业务页面为准）</b><ul>{workflow.results.map(item => <li key={item.step}>
+    {!!workflow.results?.length && <div className="agent-notice agent-notice-ok"><b>已创建的任务与产物</b><ul>{workflow.results.map(item => <li key={item.step}>
       步骤 {item.step} · {({ create_monitor: "监控", create_collection: "采集", render_cover: "封面", render_packaging: "包装",
-        render_3d_intro: "3D 片头", schedule_publish: "发布草稿" }[item.kind] || item.kind)} #{item.id}{item.path ? "" : ""}{item.replayed ? " · 已复用原提交" : ""}
+        render_3d_intro: "3D 片头", render_intro_v2: "有声片头 v2", schedule_publish: "发布草稿" }[item.kind] || item.kind)}
+      {item.kind === "render_intro_v2" && typeof item.path === "string" && item.path
+        ? <> · <a href={`/api/fusion/file?path=${encodeURIComponent(item.path)}`} target="_blank" rel="noopener noreferrer">打开片头视频</a></>
+        : ` #${item.id}`}
+      {item.replayed ? " · 已复用原提交" : ""}
     </li>)}</ul></div>}
     {workflow.error && <p className="agent-error" role="alert">{workflow.error}</p>}
     {workflow.status !== "applied" && <>

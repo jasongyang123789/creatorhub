@@ -7,13 +7,12 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import Literal
 
-from pathlib import Path
-
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from . import (blender3d, brandkit, cover, customers, daily, deai, diagram, explainer,
                extract, mpt, packaging, preview, publish, shots, skillpack, tucard,
@@ -124,6 +123,22 @@ class Intro3dIn(BaseModel):
     seconds: float = Field(default=2.0, ge=1, le=5)
     aspect: Literal["9:16", "16:9"] = "9:16"
     fps: Literal[24, 30] = 24
+
+
+class IntroV2In(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    title: str = Field(default="创作工作台", min_length=1, max_length=16)
+    hook: str = Field(default="把想法", min_length=1, max_length=12)
+    message: str = Field(default="做成内容", min_length=1, max_length=12)
+    tagline: str = Field(default="让每个想法落地", min_length=1, max_length=24)
+    brand: str = Field(default="CREATORHUB", min_length=1, max_length=24)
+
+    @field_validator("title", "hook", "message", "tagline", "brand")
+    @classmethod
+    def visible_single_line(cls, value: str) -> str:
+        if not value.strip() or not value.isprintable():
+            raise ValueError("请填写可见的单行文字，不得含换行或控制字符")
+        return value.strip()
 
 
 # 创作日报 Service Worker：缓存优先 + 后台更新（同源 GET）。
@@ -292,6 +307,16 @@ def create_router() -> APIRouter:
         except ValueError as exc:
             raise HTTPException(400, str(exc))
 
+    @router.post("/intro-v2")
+    def post_intro_v2(body: IntroV2In, request: Request = None):
+        from .intro_v2 import render_intro_v2
+
+        request_key = request.headers.get("Idempotency-Key", "") if request is not None else ""
+        try:
+            return render_intro_v2(**body.model_dump(), request_key=request_key)
+        except (RuntimeError, ValueError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+
     @router.post("/intro3d")
     def post_intro3d(body: Intro3dIn):
         # Blender 缺失报 RuntimeError，与参数错误一样回 400，前端直接显示提示文案
@@ -359,10 +384,8 @@ def create_router() -> APIRouter:
     @router.get("/assets")
     def get_assets(kind: str = Query(default="", max_length=20),
                    limit: int = Query(default=50, ge=1, le=200)):
-        """列出融合层已生成的产物（封面/包装/讲解片/混剪/提取/架构图/品牌包/预览/贴图卡）。"""
-        folders = {"cover": "covers", "packaging": "packaging", "explainer": "explainer",
-                   "short": "shorts", "extract": "extract", "diagram": "diagrams",
-                   "brandkit": "brandkits", "preview": "preview", "tucard": "tucards", "intro3d": "intros"}
+        """列出融合层已生成的产物。"""
+        folders = daily.FOLDERS
         if kind and kind not in folders:
             raise HTTPException(422, "不支持该资产类型")
         items = []
