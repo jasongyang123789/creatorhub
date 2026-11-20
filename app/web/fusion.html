@@ -334,6 +334,18 @@ async function api(path, opt = {}) {
 }
 function err(el, e) { el.innerHTML = '<div class="issue high">' + esc(e.message || e) + '</div>'; }
 
+// 专属视图：?only=iv2 只保留有声片头 v2 的表单与预览（导航栏独立入口用）
+const onlyIv2 = new URLSearchParams(location.search).get("only") === "iv2";
+if (onlyIv2) {
+  document.title = "有声片头 · CreatorHub";
+  // 包装页签内的其它面板：包装镜头表单、其预览、旧版 Blender（按可见标题隐藏）
+  document.querySelectorAll("#v-packaging .panel").forEach(panel => {
+    const head = panel.querySelector("h2")?.textContent || "";
+    if (["有声片头 v2", "有声片头预览"].includes(head)) return;
+    panel.style.display = "none";
+  });
+}
+
 // 嵌入模式：在主工作台 iframe 里隐藏自己的标题栏
 if (new URLSearchParams(location.search).get('embed')) {
   document.querySelector('.top').style.display = 'none';

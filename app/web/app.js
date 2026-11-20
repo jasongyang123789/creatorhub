@@ -1051,6 +1051,9 @@ const PAGE_META = {
   fusion: {
     title: "创作台", desc: "选题、封面、包装、讲解片、混剪与去 AI 味，全部在本地生成。"
   },
+  "intro-v2": {
+    title: "有声片头", desc: "六秒竖屏有声片头：大字开场、工作台画面与品牌落版，本地生成。"
+  },
   accounts: {
     title: "平台账号", desc: "查看登录状态；网络与环境配置按需展开。"
   },
@@ -1502,6 +1505,10 @@ function switchTab(name, pushHistory = false) {
   }
   if (name === "fusion") {
     const frame = $("fusion-frame");
+    if (frame && !frame.getAttribute("src")) frame.src = frame.dataset.src;
+  }
+  if (name === "intro-v2") {
+    const frame = $("intro-v2-frame");
     if (frame && !frame.getAttribute("src")) frame.src = frame.dataset.src;
   }
   if (name === "collections") { populateCollectionAccount(); refreshCollections(); }
